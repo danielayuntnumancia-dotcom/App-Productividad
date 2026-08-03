@@ -3,14 +3,17 @@ import { db } from '../firebaseConfig';
 import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, deleteDoc } from 'firebase/firestore';
 import { Tarea } from '../types';
 import { User } from 'firebase/auth';
+import TaskCreateModal from './TaskCreateModal';
 
 interface Props {
   user: User;
+  searchQuery?: string;
+  onSelectTask: (tarea: Tarea | null) => void;
 }
 
-export default function MiDiaView({ user }: Props) {
+export default function MiDiaView({ user, searchQuery = '', onSelectTask }: Props) {
   const [tareas, setTareas] = useState<Tarea[]>([]);
-  const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [isCreatingTask, setIsCreatingTask] = useState(false);
 
   useEffect(() => {
     const q = query(
@@ -31,35 +34,6 @@ export default function MiDiaView({ user }: Props) {
     return () => unsubscribe();
   }, [user]);
 
-  const handleAddTask = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newTaskTitle.trim()) return;
-
-    // Parse estimated time if included (e.g. "Llamar cliente 30m")
-    let title = newTaskTitle.trim();
-    let time = "30m"; // default
-    const timeMatch = title.match(/(\d+[hm])$/i);
-    if (timeMatch) {
-      time = timeMatch[1];
-      title = title.replace(/(\d+[hm])$/i, '').trim();
-    }
-
-    try {
-      const newTarea: Omit<Tarea, 'id'> = {
-        userId: user.uid,
-        titulo: title,
-        tiempo_estimado: time,
-        completada: false,
-        fecha_asignada: Date.now(),
-        prioridad: 0,
-      };
-      await addDoc(collection(db, 'tareas'), newTarea);
-      setNewTaskTitle('');
-    } catch (error) {
-      console.error("Error adding document: ", error);
-    }
-  };
-
   const handleCompleteTask = async (taskId: string) => {
     try {
       const taskRef = doc(db, 'tareas', taskId);
@@ -78,7 +52,16 @@ export default function MiDiaView({ user }: Props) {
     return isHours ? val * 60 : val;
   };
 
-  const totalMinutes = tareas.reduce((acc, task) => acc + getMinutes(task.tiempo_estimado), 0);
+  const filteredTareas = tareas.filter(t => {
+    if (!searchQuery.trim()) return true;
+    const query = searchQuery.toLowerCase();
+    return (
+      t.titulo.toLowerCase().includes(query) ||
+      (t.notas && t.notas.toLowerCase().includes(query))
+    );
+  });
+
+  const totalMinutes = filteredTareas.reduce((acc, task) => acc + getMinutes(task.tiempo_estimado), 0);
   const maxMinutes = 8 * 60;
   const capacityPercent = Math.min((totalMinutes / maxMinutes) * 100, 100);
 
@@ -86,6 +69,26 @@ export default function MiDiaView({ user }: Props) {
     const h = Math.floor(mins / 60);
     const m = mins % 60;
     return `${h > 0 ? h + 'h ' : ''}${m > 0 ? m + 'm' : ''}`.trim() || '0m';
+  };
+
+  const getPriorityStyle = (prioridad?: string) => {
+    switch(prioridad) {
+      case 'alta': return 'bg-red-50/80 border-red-100 dark:bg-red-900/10 dark:border-red-900/30';
+      case 'media': return 'bg-amber-50/80 border-amber-100 dark:bg-amber-900/10 dark:border-amber-900/30';
+      case 'baja': return 'bg-emerald-50/80 border-emerald-100 dark:bg-emerald-900/10 dark:border-emerald-900/30';
+      default: return 'bg-white dark:bg-slate-800 border-slate-100 dark:border-slate-700';
+    }
+  };
+
+  const getConcejaliaBg = (concejalia?: string) => {
+    switch(concejalia) {
+      case 'Medioambiente': return 'bg-emerald-500';
+      case 'Seguridad': return 'bg-blue-500';
+      case 'Transporte': return 'bg-purple-500';
+      case 'Hacienda': return 'bg-amber-500';
+      case 'Entidades privadas': return 'bg-slate-500';
+      default: return 'bg-slate-50 dark:bg-slate-800/50 border-r border-slate-100 dark:border-slate-700/50';
+    }
   };
 
   return (
@@ -117,43 +120,63 @@ export default function MiDiaView({ user }: Props) {
           </div>
         </section>
 
-        {/* CAPTURA RAPIDA (Quick Add) */}
-        <section className="relative group animate-fade-in-up" style={{ animationDelay: '100ms' }}>
-          <form onSubmit={handleAddTask} className="flex items-center bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-2 px-4 shadow-sm focus-within:border-indigo-500 dark:focus-within:border-indigo-500 focus-within:ring-1 focus-within:ring-indigo-500 transition-all duration-300">
-            <svg className="w-5 h-5 text-slate-400 dark:text-slate-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"></path></svg>
-            <input 
-              className="w-full bg-transparent border-none focus:ring-0 text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 py-3 outline-none transition-colors duration-300" 
-              placeholder="Añadir tarea (ej: Llamar cliente 30m)" 
-              type="text"
-              value={newTaskTitle}
-              onChange={(e) => setNewTaskTitle(e.target.value)}
-            />
-            <button type="submit" className="ml-2 bg-indigo-600 dark:bg-indigo-500 text-white px-5 py-2.5 rounded-xl font-semibold shadow-lg shadow-indigo-200 dark:shadow-none hover:bg-indigo-700 dark:hover:bg-indigo-600 transition-all opacity-0 group-focus-within:opacity-100 whitespace-nowrap">
-              Añadir
-            </button>
-          </form>
+        {/* ADD TASK BUTTON */}
+        <section className="animate-fade-in-up" style={{ animationDelay: '100ms' }}>
+          <button 
+            onClick={() => setIsCreatingTask(true)}
+            className="w-full flex items-center justify-center gap-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-indigo-500 dark:hover:border-indigo-500 rounded-2xl p-4 shadow-sm text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 font-semibold transition-all duration-300"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"></path></svg>
+            Nueva Tarea
+          </button>
         </section>
 
         {/* PLANIFICADOR (Task List) */}
         <section className="flex flex-col gap-4 animate-fade-in-up" style={{ animationDelay: '200ms' }}>
-          {tareas.length === 0 ? (
+          {filteredTareas.length === 0 ? (
             <p className="text-center text-slate-500 dark:text-slate-400 mt-8 transition-colors duration-300">No hay tareas para hoy. ¡Disfruta tu tiempo libre!</p>
           ) : (
-            tareas.map(tarea => (
-              <div key={tarea.id} className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm flex items-center gap-4 group hover:shadow-md transition-all duration-300">
-                <button 
-                  onClick={() => handleCompleteTask(tarea.id!)}
-                  className="w-6 h-6 rounded-full border-2 border-slate-300 dark:border-slate-600 flex items-center justify-center hover:border-indigo-500 dark:hover:border-indigo-400 transition-colors cursor-pointer shrink-0"
-                >
-                  <svg className="w-4 h-4 text-indigo-600 dark:text-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>
-                </button>
-                <div className="flex-1 min-w-0">
+            filteredTareas.map(tarea => (
+              <div 
+                key={tarea.id} 
+                className={`rounded-2xl border shadow-sm flex items-stretch group hover:shadow-md transition-all duration-300 cursor-pointer overflow-hidden ${getPriorityStyle(tarea.prioridad)}`}
+                onClick={() => onSelectTask(tarea)}
+              >
+                <div className={`w-14 sm:w-16 flex items-start justify-center pt-5 shrink-0 transition-colors ${getConcejaliaBg(tarea.concejalia)}`}>
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); handleCompleteTask(tarea.id!); }}
+                    className={`w-6 h-6 mt-0.5 rounded-full border-2 flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
+                      tarea.concejalia
+                        ? 'border-white/60 hover:border-white text-white'
+                        : 'border-slate-300 dark:border-slate-600 hover:border-indigo-500 dark:hover:border-indigo-400 text-indigo-600 dark:text-indigo-400'
+                    }`}
+                  >
+                    <svg className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>
+                  </button>
+                </div>
+                <div className="flex-1 min-w-0 p-4 sm:p-5">
                   <h3 className="font-semibold text-slate-800 dark:text-slate-100 truncate transition-colors duration-300">{tarea.titulo}</h3>
-                  <div className="flex items-center gap-3 mt-1">
-                    <span className="text-xs font-medium text-slate-400 dark:text-slate-500 flex items-center gap-1 transition-colors duration-300">
+                  {tarea.notas && (
+                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 line-clamp-2 leading-relaxed">
+                      {tarea.notas}
+                    </p>
+                  )}
+                  <div className="flex flex-wrap items-center gap-3 mt-3">
+                    <span className="text-xs font-medium text-slate-500 dark:text-slate-400 bg-white/50 dark:bg-slate-800/50 px-2 py-1 rounded-md flex items-center gap-1 transition-colors duration-300">
                       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                       {tarea.tiempo_estimado}
                     </span>
+                    {tarea.concejalia && (
+                       <span className="text-xs font-medium text-slate-500 dark:text-slate-400 bg-white/50 dark:bg-slate-800/50 px-2 py-1 rounded-md transition-colors duration-300">
+                         {tarea.concejalia}
+                       </span>
+                    )}
+                    {tarea.fecha_vencimiento && (
+                      <span className="text-xs font-medium text-slate-500 dark:text-slate-400 bg-white/50 dark:bg-slate-800/50 px-2 py-1 rounded-md flex items-center gap-1 transition-colors duration-300">
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                        {new Date(tarea.fecha_vencimiento).toLocaleDateString('es-ES', { month: 'short', day: 'numeric' })}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -162,6 +185,13 @@ export default function MiDiaView({ user }: Props) {
         </section>
 
       </div>
+      
+      {isCreatingTask && (
+        <TaskCreateModal 
+          user={user} 
+          onClose={() => setIsCreatingTask(false)} 
+        />
+      )}
     </div>
   );
 }
