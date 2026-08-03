@@ -1,0 +1,6 @@
+{
+  "name": "FocusFlow",
+  "description": "Productividad consciente, sin fricción.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

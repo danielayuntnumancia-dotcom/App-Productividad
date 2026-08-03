@@ -1,0 +1,94 @@
+@import "tailwindcss";
+
+@variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-surface-tint: #005ac2;
+  --color-secondary: #5e5e5d;
+  --color-on-secondary-fixed: #1a1c1b;
+  --color-on-background: #1c1b1a;
+  --color-surface-dim: #ddd9d7;
+  --color-burnout-red: #EF4444;
+  --color-on-tertiary-fixed: #1b1b1c;
+  --color-warning-orange: #F59E0B;
+  --color-surface-bright: #fdf8f6;
+  --color-tertiary-fixed: #e5e2e1;
+  --color-background: #fdf8f6;
+  --color-primary-fixed-dim: #adc6ff;
+  --color-soft-gray: #F7F8F9;
+  --color-on-secondary: #ffffff;
+  --color-on-tertiary-fixed-variant: #474746;
+  --color-primary: #0058be;
+  --color-inverse-surface: #31302f;
+  --color-error-container: #ffdad6;
+  --color-outline: #727785;
+  --color-on-primary: #ffffff;
+  --color-inverse-on-surface: #f4f0ed;
+  --color-on-primary-fixed: #001a42;
+  --color-on-secondary-container: #626361;
+  --color-secondary-container: #e0dfde;
+  --color-tertiary-fixed-dim: #c8c6c5;
+  --color-primary-fixed: #d8e2ff;
+  --color-on-error-container: #93000a;
+  --color-on-primary-container: #fefcff;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-off-white: #FEFDFC;
+  --color-on-primary-fixed-variant: #004395;
+  --color-surface-container-high: #ebe7e5;
+  --color-surface-container-highest: #e6e2df;
+  --color-error: #ba1a1a;
+  --color-inverse-primary: #adc6ff;
+  --color-outline-variant: #c2c6d6;
+  --color-surface-container-low: #f7f3f0;
+  --color-surface: #fdf8f6;
+  --color-on-surface-variant: #424754;
+  --color-on-secondary-fixed-variant: #464746;
+  --color-surface-container: #f1edea;
+  --color-primary-container: #2170e4;
+  --color-tertiary-container: #757474;
+  --color-on-error: #ffffff;
+  --color-on-surface: #1c1b1a;
+  --color-focus-blue: #3B82F6;
+  --color-on-tertiary-container: #fffcfb;
+  --color-tertiary: #5c5c5c;
+  --color-secondary-fixed-dim: #c7c6c5;
+  --color-secondary-fixed: #e3e2e0;
+  --color-surface-variant: #e6e2df;
+  --color-on-tertiary: #ffffff;
+
+  --spacing-max-width: 1200px;
+  --spacing-margin-desktop: 40px;
+  --spacing-margin-mobile: 20px;
+  --spacing-gutter: 16px;
+
+  --font-headline-lg-mobile: Inter;
+  --font-headline-lg: Inter;
+  --font-body-md: Inter;
+  --font-body-lg: Inter;
+  --font-headline-md: Inter;
+  --font-label-sm: Inter;
+  --font-label-xs: Inter;
+
+  /* Since Tailwind 4 uses CSS vars directly, we'll keep it simple */
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.5s ease-out forwards;
+  opacity: 0;
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}

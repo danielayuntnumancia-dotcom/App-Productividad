@@ -1,0 +1,38 @@
+{
+  "collections": [
+    {
+      "collection": "tareas",
+      "description": "Tasks for users",
+      "rules": [
+        {
+          "type": "read",
+          "allow": "request.auth != null && request.auth.uid == resource.data.userId",
+          "description": "Users can only read their own tasks"
+        },
+        {
+          "type": "create",
+          "allow": "request.auth != null && request.resource.data.userId == request.auth.uid",
+          "description": "Users can only create tasks for themselves"
+        },
+        {
+          "type": "update",
+          "allow": "request.auth != null && request.auth.uid == resource.data.userId && request.resource.data.userId == request.auth.uid",
+          "description": "Users can only update their own tasks"
+        },
+        {
+          "type": "delete",
+          "allow": "request.auth != null && request.auth.uid == resource.data.userId",
+          "description": "Users can only delete their own tasks"
+        }
+      ],
+      "schema": {
+        "userId": "string",
+        "titulo": "string",
+        "tiempo_estimado": "string",
+        "completada": "boolean",
+        "fecha_asignada": "timestamp | null",
+        "prioridad": "number"
+      }
+    }
+  ]
+}
