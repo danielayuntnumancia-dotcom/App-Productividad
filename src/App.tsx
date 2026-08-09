@@ -5,13 +5,14 @@ import LoginView from './components/LoginView';
 import MiDiaView from './components/MiDiaView';
 import RegistroView from './components/RegistroView';
 import CalendarioView from './components/CalendarioView';
+import ExpedientesView from './components/ExpedientesView';
 import TaskDetailPanel from './components/TaskDetailPanel';
 import { Tarea } from './types';
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [currentView, setCurrentView] = useState<'myday' | 'registro' | 'calendario'>('myday');
+  const [currentView, setCurrentView] = useState<'myday' | 'registro' | 'calendario' | 'expedientes'>('myday');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTask, setSelectedTask] = useState<Tarea | null>(null);
 
@@ -94,6 +95,16 @@ export default function App() {
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
             <span>Calendario</span>
           </button>
+
+          <button 
+            onClick={() => { setCurrentView('expedientes'); setSelectedTask(null); }}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-colors ${currentView === 'expedientes' ? 'bg-indigo-50 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/50'}`}
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+            </svg>
+            <span>Expedientes</span>
+          </button>
         </nav>
         
         <div className="p-4 border-t border-slate-200 dark:border-slate-700 space-y-1 bg-slate-50 dark:bg-slate-800">
@@ -145,7 +156,7 @@ export default function App() {
                 <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg>
               </div>
               <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100 transition-colors duration-300">
-                {currentView === 'myday' ? 'Mi Día' : currentView === 'registro' ? 'Bandeja' : 'Calendario'}
+                {currentView === 'myday' ? 'Mi Día' : currentView === 'registro' ? 'Bandeja' : currentView === 'calendario' ? 'Calendario' : 'Expedientes'}
               </h1>
             </div>
             {/* MOBILE ONLY BUTTONS IN HEADER */}
@@ -176,33 +187,51 @@ export default function App() {
         </header>
 
         <div className="flex-1 overflow-y-auto pb-24 md:pb-0">
-          {currentView === 'myday' ? <MiDiaView user={user} searchQuery={searchQuery} onSelectTask={setSelectedTask} /> : currentView === 'registro' ? <RegistroView user={user} searchQuery={searchQuery} onSelectTask={setSelectedTask} /> : <CalendarioView user={user} searchQuery={searchQuery} onSelectTask={setSelectedTask} />}
+          {currentView === 'myday' ? (
+            <MiDiaView user={user} searchQuery={searchQuery} onSelectTask={setSelectedTask} />
+          ) : currentView === 'registro' ? (
+            <RegistroView user={user} searchQuery={searchQuery} onSelectTask={setSelectedTask} />
+          ) : currentView === 'calendario' ? (
+            <CalendarioView user={user} searchQuery={searchQuery} onSelectTask={setSelectedTask} />
+          ) : (
+            <ExpedientesView user={user} searchQuery={searchQuery} onSelectTask={setSelectedTask} />
+          )}
         </div>
 
         {/* MOBILE BOTTOM NAV BAR */}
-        <nav className="md:hidden fixed bottom-0 left-0 w-full z-50 flex justify-around items-center h-20 pb-safe px-6 bg-white/90 dark:bg-slate-800/90 border-t border-slate-200 dark:border-slate-700 backdrop-blur-xl transition-colors duration-300">
+        <nav className="md:hidden fixed bottom-0 left-0 w-full z-50 flex justify-around items-center h-20 pb-safe px-4 bg-white/90 dark:bg-slate-800/90 border-t border-slate-200 dark:border-slate-700 backdrop-blur-xl transition-colors duration-300">
           <button 
             onClick={() => { setCurrentView('myday'); setSelectedTask(null); }}
-            className={`flex flex-col items-center justify-center w-20 h-14 rounded-xl transition-all duration-200 ${currentView === 'myday' ? 'text-indigo-700 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}
+            className={`flex flex-col items-center justify-center w-16 h-14 rounded-xl transition-all duration-200 ${currentView === 'myday' ? 'text-indigo-700 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}
           >
-            <svg className="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+            <svg className="w-5 h-5 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
             <span className="text-[10px] font-medium">Mi Día</span>
           </button>
           
           <button 
             onClick={() => { setCurrentView('registro'); setSelectedTask(null); }}
-            className={`flex flex-col items-center justify-center w-20 h-14 rounded-xl transition-all duration-200 ${currentView === 'registro' ? 'text-indigo-700 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}
+            className={`flex flex-col items-center justify-center w-16 h-14 rounded-xl transition-all duration-200 ${currentView === 'registro' ? 'text-indigo-700 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}
           >
-            <svg className="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg>
+            <svg className="w-5 h-5 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg>
             <span className="text-[10px] font-medium">Bandeja</span>
           </button>
           
           <button 
             onClick={() => { setCurrentView('calendario'); setSelectedTask(null); }}
-            className={`flex flex-col items-center justify-center w-20 h-14 rounded-xl transition-all duration-200 ${currentView === 'calendario' ? 'text-indigo-700 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}
+            className={`flex flex-col items-center justify-center w-16 h-14 rounded-xl transition-all duration-200 ${currentView === 'calendario' ? 'text-indigo-700 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}
           >
-            <svg className="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+            <svg className="w-5 h-5 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
             <span className="text-[10px] font-medium">Calendario</span>
+          </button>
+
+          <button 
+            onClick={() => { setCurrentView('expedientes'); setSelectedTask(null); }}
+            className={`flex flex-col items-center justify-center w-16 h-14 rounded-xl transition-all duration-200 ${currentView === 'expedientes' ? 'text-indigo-700 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}
+          >
+            <svg className="w-5 h-5 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+            </svg>
+            <span className="text-[10px] font-medium">Expedientes</span>
           </button>
         </nav>
       </main>

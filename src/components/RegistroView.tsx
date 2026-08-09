@@ -4,6 +4,8 @@ import { collection, query, where, onSnapshot, doc, updateDoc, deleteDoc, addDoc
 import { Tarea } from '../types';
 import { User } from 'firebase/auth';
 import TaskCreateModal from './TaskCreateModal';
+import TemplateSelectorModal from './TemplateSelectorModal';
+import { getConcejaliaStyle } from '../utils/concejaliaColors';
 
 interface Props {
   user: User;
@@ -14,6 +16,7 @@ interface Props {
 export default function RegistroView({ user, searchQuery = '', onSelectTask }: Props) {
   const [tareas, setTareas] = useState<Tarea[]>([]);
   const [isCreatingTask, setIsCreatingTask] = useState(false);
+  const [isCreatingExpediente, setIsCreatingExpediente] = useState(false);
   const [filter, setFilter] = useState<'pendientes' | 'completadas' | 'todas'>('pendientes');
 
   useEffect(() => {
@@ -25,7 +28,10 @@ export default function RegistroView({ user, searchQuery = '', onSelectTask }: P
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const tareasData: Tarea[] = [];
       snapshot.forEach((doc) => {
-        tareasData.push({ id: doc.id, ...doc.data() } as Tarea);
+        const data = doc.data();
+        if (!data.isTemplate && !data.isConcejalia) {
+          tareasData.push({ id: doc.id, ...data } as Tarea);
+        }
       });
       
       // Sort: high priority first, then date
@@ -55,6 +61,16 @@ export default function RegistroView({ user, searchQuery = '', onSelectTask }: P
       });
     } catch (error) {
       console.error("Error updating document: ", error);
+    }
+  };
+
+  const handleDeleteTaskDirect = async (taskId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!window.confirm("¿Eliminar esta tarea definitivamente?")) return;
+    try {
+      await deleteDoc(doc(db, 'tareas', taskId));
+    } catch (err) {
+      console.error("Error deleting task directly: ", err);
     }
   };
 
@@ -142,14 +158,23 @@ export default function RegistroView({ user, searchQuery = '', onSelectTask }: P
           </div>
         </section>
 
-        {/* ADD TASK BUTTON */}
-        <section className="animate-fade-in-up" style={{ animationDelay: '50ms' }}>
+        {/* ADD TASK & EXPEDIENTE BUTTONS */}
+        <section className="animate-fade-in-up flex flex-col sm:flex-row gap-3" style={{ animationDelay: '50ms' }}>
           <button 
             onClick={() => setIsCreatingTask(true)}
-            className="w-full flex items-center justify-center gap-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-indigo-500 dark:hover:border-indigo-500 rounded-2xl p-4 shadow-sm text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 font-semibold transition-all duration-300"
+            className="flex-1 flex items-center justify-center gap-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-indigo-500 dark:hover:border-indigo-500 rounded-2xl p-4 shadow-sm text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 font-semibold transition-all duration-300 cursor-pointer"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"></path></svg>
             Nueva Tarea
+          </button>
+          <button 
+            onClick={() => setIsCreatingExpediente(true)}
+            className="flex-1 flex items-center justify-center gap-2 bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-800/50 hover:border-indigo-500 dark:hover:border-indigo-500 rounded-2xl p-4 shadow-sm text-indigo-700 dark:text-indigo-300 font-semibold transition-all duration-300 cursor-pointer"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+            </svg>
+            Nuevo Expediente
           </button>
         </section>
 
@@ -185,8 +210,34 @@ export default function RegistroView({ user, searchQuery = '', onSelectTask }: P
                     <h3 className={`font-semibold truncate transition-colors duration-300 ${tarea.completada ? 'text-slate-500 dark:text-slate-400 line-through' : 'text-slate-800 dark:text-slate-100'}`}>
                       {tarea.titulo}
                     </h3>
-                    {getStatusBadge(tarea.status, tarea.blockedBy)}
+                    <div className="flex items-center gap-2 shrink-0">
+                      {getStatusBadge(tarea.status, tarea.blockedBy)}
+                      <button
+                        onClick={(e) => handleDeleteTaskDirect(tarea.id!, e)}
+                        className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 transition-all shrink-0 cursor-pointer"
+                        title="Eliminar tarea directamente"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                      </button>
+                    </div>
                   </div>
+                  {tarea.projectName && (
+                    <div className="text-xs font-medium text-slate-500 dark:text-slate-400 mt-1 flex flex-wrap items-center gap-1.5">
+                      {(() => {
+                        const conc = tarea.concejalia || tarea.projectConcejalia || tarea.projectMasterCategory;
+                        if (!conc) return null;
+                        const cStyle = getConcejaliaStyle(conc);
+                        return (
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${cStyle.badgeClass}`}>
+                            📁 {conc}
+                          </span>
+                        );
+                      })()}
+                      <span className="text-slate-600 dark:text-slate-300 font-semibold">
+                        {tarea.expedientCode ? `${tarea.expedientCode} - ` : ''}{tarea.projectName}
+                      </span>
+                    </div>
+                  )}
                   {tarea.notas && (
                     <p className={`text-sm mt-1 line-clamp-2 leading-relaxed ${tarea.completada ? 'text-slate-400 dark:text-slate-500' : 'text-slate-500 dark:text-slate-400'}`}>
                       {tarea.notas}
@@ -223,6 +274,13 @@ export default function RegistroView({ user, searchQuery = '', onSelectTask }: P
         <TaskCreateModal 
           user={user} 
           onClose={() => setIsCreatingTask(false)} 
+        />
+      )}
+
+      {isCreatingExpediente && (
+        <TemplateSelectorModal 
+          user={user} 
+          onClose={() => setIsCreatingExpediente(false)} 
         />
       )}
     </div>
