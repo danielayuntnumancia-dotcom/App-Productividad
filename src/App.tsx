@@ -84,7 +84,7 @@ export default function App() {
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-colors ${currentView === 'registro' ? 'bg-indigo-50 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/50'}`}
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg>
-            <span>Bandeja (Backlog)</span>
+            <span>Bandeja</span>
           </button>
           
           <button 
@@ -123,7 +123,19 @@ export default function App() {
       </aside>
 
       {/* MAIN CONTENT CANVAS */}
-      <main className="flex-1 flex flex-col h-screen overflow-hidden relative w-full bg-white dark:bg-slate-900 mx-auto transition-colors duration-300">
+      <main 
+        className="flex-1 flex flex-col h-screen overflow-hidden relative w-full bg-white dark:bg-slate-900 mx-auto transition-colors duration-300"
+        onClick={(e) => {
+          if (selectedTask) {
+            const target = e.target as HTMLElement;
+            const isTaskCard = target.closest('[data-task-card="true"]');
+            const isInteractive = target.closest('button, input, select, textarea, a');
+            if (!isTaskCard && !isInteractive) {
+              setSelectedTask(null);
+            }
+          }
+        }}
+      >
         
         {/* TOP HEADER WITH SEARCH */}
         <header className="flex flex-col md:flex-row justify-between items-start md:items-center px-6 py-4 md:h-16 w-full bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800 z-30 shrink-0 transition-colors duration-300 gap-4">
@@ -133,7 +145,7 @@ export default function App() {
                 <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg>
               </div>
               <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100 transition-colors duration-300">
-                {currentView === 'myday' ? 'Mi Día' : currentView === 'registro' ? 'Bandeja (Backlog)' : 'Calendario'}
+                {currentView === 'myday' ? 'Mi Día' : currentView === 'registro' ? 'Bandeja' : 'Calendario'}
               </h1>
             </div>
             {/* MOBILE ONLY BUTTONS IN HEADER */}

@@ -67,8 +67,9 @@ export default function CalendarioView({ user, searchQuery = '', onSelectTask }:
 
   const getTasksForDate = (date: Date) => {
     return filteredTareas.filter(t => {
-      if (!t.fecha_vencimiento && !t.fecha_asignada) return false;
-      const taskDate = new Date(t.fecha_vencimiento || t.fecha_asignada || 0);
+      const taskTimestamp = t.dueDate || t.fecha_vencimiento || t.fecha_asignada;
+      if (!taskTimestamp) return false;
+      const taskDate = new Date(taskTimestamp);
       return isSameDay(taskDate, date);
     });
   };
@@ -251,6 +252,7 @@ export default function CalendarioView({ user, searchQuery = '', onSelectTask }:
                 {dayTasks.map(t => (
                   <div 
                     key={t.id} 
+                    data-task-card="true"
                     onClick={() => onSelectTask(t)}
                     className={`p-2 rounded-lg text-xs cursor-pointer shadow-sm border ${
                       t.completada 

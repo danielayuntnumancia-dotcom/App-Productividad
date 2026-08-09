@@ -34,7 +34,9 @@ export default function RegistroView({ user, searchQuery = '', onSelectTask }: P
         const scoreA = priorityScore[a.prioridad as string] || 2;
         const scoreB = priorityScore[b.prioridad as string] || 2;
         if (scoreA !== scoreB) return scoreB - scoreA;
-        return (a.fecha_vencimiento || 0) - (b.fecha_vencimiento || 0);
+        const dateA = a.dueDate || a.fecha_vencimiento || 0;
+        const dateB = b.dueDate || b.fecha_vencimiento || 0;
+        return dateA - dateB;
       });
       
       setTareas(tareasData);
@@ -46,7 +48,9 @@ export default function RegistroView({ user, searchQuery = '', onSelectTask }: P
   const handleCompleteTask = async (taskId: string, completada: boolean) => {
     try {
       const taskRef = doc(db, 'tareas', taskId);
+      const newStatus = completada ? 'todo' : 'completed';
       await updateDoc(taskRef, {
+        status: newStatus,
         completada: !completada
       });
     } catch (error) {
@@ -56,8 +60,9 @@ export default function RegistroView({ user, searchQuery = '', onSelectTask }: P
 
   const filteredTareas = tareas.filter(t => {
     let matchFilter = true;
-    if (filter === 'pendientes') matchFilter = !t.completada;
-    else if (filter === 'completadas') matchFilter = !!t.completada;
+    const isCompleted = t.status === 'completed' || !!t.completada;
+    if (filter === 'pendientes') matchFilter = !isCompleted;
+    else if (filter === 'completadas') matchFilter = isCompleted;
 
     if (!matchFilter) return false;
 
@@ -75,6 +80,24 @@ export default function RegistroView({ user, searchQuery = '', onSelectTask }: P
       case 'media': return 'bg-amber-50/80 border-amber-100 dark:bg-amber-900/10 dark:border-amber-900/30';
       case 'baja': return 'bg-emerald-50/80 border-emerald-100 dark:bg-emerald-900/10 dark:border-emerald-900/30';
       default: return 'bg-white dark:bg-slate-800 border-slate-100 dark:border-slate-700';
+    }
+  };
+
+  const getStatusBadge = (status?: string, blockedBy?: string) => {
+    switch(status) {
+      case 'in_progress':
+        return <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">En curso</span>;
+      case 'waiting_on_third_party':
+        return (
+          <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 flex items-center gap-1 border border-amber-300/50 dark:border-amber-700/50">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+            {blockedBy ? `Retenido: ${blockedBy}` : 'En espera de terceros'}
+          </span>
+        );
+      case 'completed':
+        return <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">Completada</span>;
+      default:
+        return <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300">Pendiente</span>;
     }
   };
 
@@ -141,6 +164,7 @@ export default function RegistroView({ user, searchQuery = '', onSelectTask }: P
             filteredTareas.map(tarea => (
               <div 
                 key={tarea.id} 
+                data-task-card="true"
                 className={`rounded-2xl border shadow-sm flex items-stretch group hover:shadow-md transition-all duration-300 cursor-pointer overflow-hidden ${tarea.completada ? 'opacity-60 grayscale-[0.5]' : ''} ${getPriorityStyle(tarea.prioridad)}`}
                 onClick={() => onSelectTask(tarea)}
               >
@@ -157,9 +181,12 @@ export default function RegistroView({ user, searchQuery = '', onSelectTask }: P
                   </button>
                 </div>
                 <div className="flex-1 min-w-0 p-4 sm:p-5">
-                  <h3 className={`font-semibold truncate transition-colors duration-300 ${tarea.completada ? 'text-slate-500 dark:text-slate-400 line-through' : 'text-slate-800 dark:text-slate-100'}`}>
-                    {tarea.titulo}
-                  </h3>
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className={`font-semibold truncate transition-colors duration-300 ${tarea.completada ? 'text-slate-500 dark:text-slate-400 line-through' : 'text-slate-800 dark:text-slate-100'}`}>
+                      {tarea.titulo}
+                    </h3>
+                    {getStatusBadge(tarea.status, tarea.blockedBy)}
+                  </div>
                   {tarea.notas && (
                     <p className={`text-sm mt-1 line-clamp-2 leading-relaxed ${tarea.completada ? 'text-slate-400 dark:text-slate-500' : 'text-slate-500 dark:text-slate-400'}`}>
                       {tarea.notas}
