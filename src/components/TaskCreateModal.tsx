@@ -4,6 +4,7 @@ import { db } from '../firebaseConfig';
 import { User } from 'firebase/auth';
 import { Tarea, TaskStatus } from '../types';
 import CustomDatePicker from './CustomDatePicker';
+import { useConcejalias } from '../hooks/useConcejalias';
 
 interface Props {
   user: User;
@@ -11,6 +12,7 @@ interface Props {
 }
 
 export default function TaskCreateModal({ user, onClose }: Props) {
+  const concejaliasList = useConcejalias(user.uid);
   const [titulo, setTitulo] = useState('');
   const [notas, setNotas] = useState('');
   const [tiempoEstimado, setTiempoEstimado] = useState('15');
@@ -20,7 +22,7 @@ export default function TaskCreateModal({ user, onClose }: Props) {
   const [blockingReason, setBlockingReason] = useState('');
   const [externalReference, setExternalReference] = useState('');
   const [prioridad, setPrioridad] = useState<'baja' | 'media' | 'alta'>('media');
-  const [concejalia, setConcejalia] = useState<'Medioambiente' | 'Seguridad' | 'Transporte' | 'Hacienda' | 'Entidades privadas' | ''>('');
+  const [concejalia, setConcejalia] = useState<string>('');
   const [fechaVencimiento, setFechaVencimiento] = useState<string>('');
   
   const [isSaving, setIsSaving] = useState(false);
@@ -239,15 +241,13 @@ export default function TaskCreateModal({ user, onClose }: Props) {
               <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Concejalía (Opcional)</label>
               <select
                 value={concejalia}
-                onChange={(e) => setConcejalia(e.target.value as any)}
-                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors"
+                onChange={(e) => setConcejalia(e.target.value)}
+                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors font-medium"
               >
                 <option value="">Selecciona una concejalía...</option>
-                <option value="Medioambiente">Medioambiente</option>
-                <option value="Seguridad">Seguridad</option>
-                <option value="Transporte">Transporte</option>
-                <option value="Hacienda">Hacienda</option>
-                <option value="Entidades privadas">Entidades privadas</option>
+                {concejaliasList.map((cName) => (
+                  <option key={cName} value={cName}>{cName}</option>
+                ))}
               </select>
             </div>
 

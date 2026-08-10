@@ -4,7 +4,9 @@ export interface Tarea {
   id?: string;
   userId: string;
   titulo: string;
+  title?: string;
   notas?: string;
+  notes?: string;
   status: TaskStatus;
   dueDate: number; // Timestamp en ms
   estimatedTimeMin: number; // Minutos estimados
@@ -15,8 +17,10 @@ export interface Tarea {
   completada?: boolean;
   fecha_asignada?: number | null;
   fecha_vencimiento?: number | null;
+  createdAt?: any;
+  fecha_creacion?: number | null;
   prioridad: 'baja' | 'media' | 'alta';
-  concejalia?: 'Medioambiente' | 'Seguridad' | 'Transporte' | 'Hacienda' | 'Entidades privadas';
+  concejalia?: string;
   
   // Trazabilidad de bloqueos
   blockedBy?: string; // Departamento / Entidad retenedora
@@ -32,6 +36,7 @@ export interface Tarea {
   projectConcejalia?: string;
   expedientCode?: string;
   linkedExpedientId?: string;
+  orderIndex?: number;
 }
 
 export interface Project {
@@ -42,6 +47,8 @@ export interface Project {
   status: 'active' | 'completed' | 'archived';
   expedientCode?: string;
   linkedExpedientId?: string;
+  notes?: string;
+  notas?: string;
   createdAt?: any;
   userId: string;
 }

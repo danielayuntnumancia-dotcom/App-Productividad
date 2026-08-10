@@ -11,26 +11,29 @@ interface Props {
   user: User;
   searchQuery?: string;
   onSelectTask: (tarea: Tarea) => void;
+  onSelectProject?: (project: Project) => void;
 }
 
-export default function ExpedientesView({ user, searchQuery = '', onSelectTask }: Props) {
+export default function ExpedientesView({ user, searchQuery = '', onSelectTask, onSelectProject }: Props) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [allTareas, setAllTareas] = useState<Tarea[]>([]);
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
   const [isCreatingExpediente, setIsCreatingExpediente] = useState(false);
   const [isCreatingBuilder, setIsCreatingBuilder] = useState(false);
 
-  // Escuchar la colección 'projects'
+  // Escuchar documentos de expedientes (isProject: true en /tareas y /projects)
   useEffect(() => {
     const qProjects = query(
-      collection(db, 'projects'),
-      where('userId', '==', user.uid)
+      collection(db, 'tareas'),
+      where('userId', '==', user.uid),
+      where('isProject', '==', true)
     );
 
     const unsubProjects = onSnapshot(qProjects, (snapshot) => {
       const projData: Project[] = [];
       snapshot.forEach((d) => {
-        projData.push({ id: d.id, ...d.data() } as Project);
+        const data = d.data();
+        projData.push({ id: data.projectId || data.id || d.id, ...data } as Project);
       });
       setProjects(projData);
     });
@@ -49,7 +52,7 @@ export default function ExpedientesView({ user, searchQuery = '', onSelectTask }
       const taskData: Tarea[] = [];
       snapshot.forEach((d) => {
         const data = d.data();
-        if (!data.isTemplate && !data.isConcejalia) {
+        if (!data.isTemplate && !data.isConcejalia && !data.isProject) {
           taskData.push({ id: d.id, ...data } as Tarea);
         }
       });
@@ -173,7 +176,7 @@ export default function ExpedientesView({ user, searchQuery = '', onSelectTask }
   });
 
   return (
-    <div className="p-6 md:p-8 max-w-5xl mx-auto space-y-8 animate-fade-in">
+    <div className="p-4 sm:p-6 md:p-8 max-w-7xl mx-auto w-full space-y-8 animate-fade-in">
       
       {/* HEADER SECTION */}
       <section className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -219,7 +222,30 @@ export default function ExpedientesView({ user, searchQuery = '', onSelectTask }
             const projectsInGroup = concejaliaGroups[concejaliaName];
             const cStyle = getConcejaliaStyle(concejaliaName);
 
-            return (
+            const getTaskSortOrder = (t: Tarea): number => {
+              const text = t.title || t.titulo || '';
+              const match = text.match(/^(\d+)[\.\s]/);
+              if (match) {
+                return parseInt(match[1], 10);
+              }
+              if (typeof t.orderIndex === 'number') return t.orderIndex;
+              return 9999;
+            };
+
+  const sortTasksNaturally = (tasks: Tarea[]): Tarea[] => {
+    return [...tasks].sort((a, b) => {
+      const orderA = getTaskSortOrder(a);
+      const orderB = getTaskSortOrder(b);
+      if (orderA !== orderB) {
+        return orderA - orderB;
+      }
+      const titleA = a.titulo || a.title || '';
+      const titleB = b.titulo || b.title || '';
+      return titleA.localeCompare(titleB, undefined, { numeric: true, sensitivity: 'base' });
+    });
+  };
+
+  return (
               <div key={concejaliaName} className="space-y-4">
                 
                 {/* NIVEL 1: ENCABEZADO DE CONCEJALÍA */}
@@ -237,7 +263,7 @@ export default function ExpedientesView({ user, searchQuery = '', onSelectTask }
                 <div className="space-y-3 pl-2 sm:pl-4">
                   {projectsInGroup.map((project) => {
                     const isExpanded = expandedProjects.has(project.id!);
-                    const projectTasks = allTareas.filter(t => t.projectId === project.id);
+                    const projectTasks = sortTasksNaturally(allTareas.filter(t => t.projectId === project.id));
                     const completedCount = projectTasks.filter(t => t.status === 'completed' || t.completada).length;
                     const totalCount = projectTasks.length;
                     const projCStyle = getConcejaliaStyle(project.concejalia);
@@ -280,7 +306,9 @@ export default function ExpedientesView({ user, searchQuery = '', onSelectTask }
                                 </span>
                               </p>
                               {(() => {
-                                const linkedParent = project.linkedExpedientId ? effectiveProjects.find(p => p.id === project.linkedExpedientId) : null;
+                                const linkedParent = project.linkedExpedientId 
+                                  ? effectiveProjects.find(p => p.id === project.linkedExpedientId || p.expedientCode === project.linkedExpedientId) 
+                                  : null;
                                 if (!linkedParent) return null;
                                 return (
                                   <p className="text-[11px] text-indigo-600 dark:text-indigo-400 font-medium flex items-center gap-1 mt-0.5">
@@ -298,6 +326,20 @@ export default function ExpedientesView({ user, searchQuery = '', onSelectTask }
                             <span className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
                               {completedCount}/{totalCount} tareas
                             </span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (onSelectProject) {
+                                  onSelectProject(project);
+                                }
+                              }}
+                              className="w-7 h-7 flex items-center justify-center rounded-lg bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 transition-all shrink-0 cursor-pointer"
+                              title="Editar Expediente (Nombre, Concejalía, Fecha)"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                              </svg>
+                            </button>
                             <button
                               onClick={(e) => handleDeleteExpedienteDirect(project.id!, project.name, e)}
                               className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 transition-all shrink-0 cursor-pointer"

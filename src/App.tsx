@@ -6,15 +6,18 @@ import MiDiaView from './components/MiDiaView';
 import RegistroView from './components/RegistroView';
 import CalendarioView from './components/CalendarioView';
 import ExpedientesView from './components/ExpedientesView';
+import DashboardView from './components/DashboardView';
 import TaskDetailPanel from './components/TaskDetailPanel';
-import { Tarea } from './types';
+import ExpedienteDetailPanel from './components/ExpedienteDetailPanel';
+import { Tarea, Project } from './types';
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [currentView, setCurrentView] = useState<'myday' | 'registro' | 'calendario' | 'expedientes'>('myday');
+  const [currentView, setCurrentView] = useState<'myday' | 'registro' | 'calendario' | 'expedientes' | 'dashboard'>('myday');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTask, setSelectedTask] = useState<Tarea | null>(null);
+  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
 
   const [isDark, setIsDark] = useState(() => {
     return document.documentElement.classList.contains('dark');
@@ -60,6 +63,16 @@ export default function App() {
     return <LoginView />;
   }
 
+  const handleSelectTask = (t: Tarea | null) => {
+    setSelectedTask(t);
+    if (t) setSelectedProject(null);
+  };
+
+  const handleSelectProject = (p: Project | null) => {
+    setSelectedProject(p);
+    if (p) setSelectedTask(null);
+  };
+
   return (
     <div className="bg-slate-50 dark:bg-slate-900 font-sans h-full overflow-hidden flex flex-col md:flex-row min-h-screen transition-colors duration-300">
       
@@ -73,7 +86,7 @@ export default function App() {
         </div>
         <nav className="flex-1 px-4 space-y-1">
           <button 
-            onClick={() => { setCurrentView('myday'); setSelectedTask(null); }}
+            onClick={() => { setCurrentView('myday'); setSelectedTask(null); setSelectedProject(null); }}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-colors ${currentView === 'myday' ? 'bg-indigo-50 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/50'}`}
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
@@ -81,7 +94,7 @@ export default function App() {
           </button>
           
           <button 
-            onClick={() => { setCurrentView('registro'); setSelectedTask(null); }}
+            onClick={() => { setCurrentView('registro'); setSelectedTask(null); setSelectedProject(null); }}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-colors ${currentView === 'registro' ? 'bg-indigo-50 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/50'}`}
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg>
@@ -89,7 +102,7 @@ export default function App() {
           </button>
           
           <button 
-            onClick={() => { setCurrentView('calendario'); setSelectedTask(null); }}
+            onClick={() => { setCurrentView('calendario'); setSelectedTask(null); setSelectedProject(null); }}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-colors ${currentView === 'calendario' ? 'bg-indigo-50 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/50'}`}
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
@@ -97,13 +110,24 @@ export default function App() {
           </button>
 
           <button 
-            onClick={() => { setCurrentView('expedientes'); setSelectedTask(null); }}
+            onClick={() => { setCurrentView('expedientes'); setSelectedTask(null); setSelectedProject(null); }}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-colors ${currentView === 'expedientes' ? 'bg-indigo-50 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/50'}`}
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
             </svg>
             <span>Expedientes</span>
+          </button>
+
+          <button 
+            onClick={() => { setCurrentView('dashboard'); setSelectedTask(null); setSelectedProject(null); }}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-colors ${currentView === 'dashboard' ? 'bg-indigo-50 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/50'}`}
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" />
+            </svg>
+            <span>Analítica</span>
           </button>
         </nav>
         
@@ -137,12 +161,13 @@ export default function App() {
       <main 
         className="flex-1 flex flex-col h-screen overflow-hidden relative w-full bg-white dark:bg-slate-900 mx-auto transition-colors duration-300"
         onClick={(e) => {
-          if (selectedTask) {
+          if (selectedTask || selectedProject) {
             const target = e.target as HTMLElement;
             const isTaskCard = target.closest('[data-task-card="true"]');
             const isInteractive = target.closest('button, input, select, textarea, a');
             if (!isTaskCard && !isInteractive) {
               setSelectedTask(null);
+              setSelectedProject(null);
             }
           }
         }}
@@ -156,7 +181,7 @@ export default function App() {
                 <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg>
               </div>
               <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100 transition-colors duration-300">
-                {currentView === 'myday' ? 'Mi Día' : currentView === 'registro' ? 'Bandeja' : currentView === 'calendario' ? 'Calendario' : 'Expedientes'}
+                {currentView === 'myday' ? 'Mi Día' : currentView === 'registro' ? 'Bandeja' : currentView === 'calendario' ? 'Calendario' : currentView === 'expedientes' ? 'Expedientes' : 'Analítica'}
               </h1>
             </div>
             {/* MOBILE ONLY BUTTONS IN HEADER */}
@@ -188,20 +213,22 @@ export default function App() {
 
         <div className="flex-1 overflow-y-auto pb-24 md:pb-0">
           {currentView === 'myday' ? (
-            <MiDiaView user={user} searchQuery={searchQuery} onSelectTask={setSelectedTask} />
+            <MiDiaView user={user} searchQuery={searchQuery} onSelectTask={handleSelectTask} onSelectProject={handleSelectProject} />
           ) : currentView === 'registro' ? (
-            <RegistroView user={user} searchQuery={searchQuery} onSelectTask={setSelectedTask} />
+            <RegistroView user={user} searchQuery={searchQuery} onSelectTask={handleSelectTask} />
           ) : currentView === 'calendario' ? (
-            <CalendarioView user={user} searchQuery={searchQuery} onSelectTask={setSelectedTask} />
+            <CalendarioView user={user} searchQuery={searchQuery} onSelectTask={handleSelectTask} />
+          ) : currentView === 'expedientes' ? (
+            <ExpedientesView user={user} searchQuery={searchQuery} onSelectTask={handleSelectTask} onSelectProject={handleSelectProject} />
           ) : (
-            <ExpedientesView user={user} searchQuery={searchQuery} onSelectTask={setSelectedTask} />
+            <DashboardView user={user} />
           )}
         </div>
 
         {/* MOBILE BOTTOM NAV BAR */}
         <nav className="md:hidden fixed bottom-0 left-0 w-full z-50 flex justify-around items-center h-20 pb-safe px-4 bg-white/90 dark:bg-slate-800/90 border-t border-slate-200 dark:border-slate-700 backdrop-blur-xl transition-colors duration-300">
           <button 
-            onClick={() => { setCurrentView('myday'); setSelectedTask(null); }}
+            onClick={() => { setCurrentView('myday'); setSelectedTask(null); setSelectedProject(null); }}
             className={`flex flex-col items-center justify-center w-16 h-14 rounded-xl transition-all duration-200 ${currentView === 'myday' ? 'text-indigo-700 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}
           >
             <svg className="w-5 h-5 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
@@ -209,7 +236,7 @@ export default function App() {
           </button>
           
           <button 
-            onClick={() => { setCurrentView('registro'); setSelectedTask(null); }}
+            onClick={() => { setCurrentView('registro'); setSelectedTask(null); setSelectedProject(null); }}
             className={`flex flex-col items-center justify-center w-16 h-14 rounded-xl transition-all duration-200 ${currentView === 'registro' ? 'text-indigo-700 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}
           >
             <svg className="w-5 h-5 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg>
@@ -217,7 +244,7 @@ export default function App() {
           </button>
           
           <button 
-            onClick={() => { setCurrentView('calendario'); setSelectedTask(null); }}
+            onClick={() => { setCurrentView('calendario'); setSelectedTask(null); setSelectedProject(null); }}
             className={`flex flex-col items-center justify-center w-16 h-14 rounded-xl transition-all duration-200 ${currentView === 'calendario' ? 'text-indigo-700 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}
           >
             <svg className="w-5 h-5 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
@@ -225,13 +252,24 @@ export default function App() {
           </button>
 
           <button 
-            onClick={() => { setCurrentView('expedientes'); setSelectedTask(null); }}
+            onClick={() => { setCurrentView('expedientes'); setSelectedTask(null); setSelectedProject(null); }}
             className={`flex flex-col items-center justify-center w-16 h-14 rounded-xl transition-all duration-200 ${currentView === 'expedientes' ? 'text-indigo-700 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}
           >
             <svg className="w-5 h-5 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
             </svg>
             <span className="text-[10px] font-medium">Expedientes</span>
+          </button>
+
+          <button 
+            onClick={() => { setCurrentView('dashboard'); setSelectedTask(null); setSelectedProject(null); }}
+            className={`flex flex-col items-center justify-center w-16 h-14 rounded-xl transition-all duration-200 ${currentView === 'dashboard' ? 'text-indigo-700 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}
+          >
+            <svg className="w-5 h-5 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" />
+            </svg>
+            <span className="text-[10px] font-medium">Analítica</span>
           </button>
         </nav>
       </main>
@@ -243,12 +281,27 @@ export default function App() {
         </aside>
       )}
 
-      {/* MOBILE SLIDE OVER FOR TASK DETAIL */}
+      {selectedProject && (
+        <aside className="hidden lg:flex flex-col w-80 xl:w-96 bg-white dark:bg-slate-800 border-l border-slate-200 dark:border-slate-700 shrink-0 z-40 transition-all duration-300">
+          <ExpedienteDetailPanel project={selectedProject} onClose={() => setSelectedProject(null)} />
+        </aside>
+      )}
+
+      {/* MOBILE SLIDE OVER FOR TASK / EXPEDIENTE DETAIL */}
       {selectedTask && (
         <div className="lg:hidden fixed inset-0 z-50 flex justify-end">
           <div className="absolute inset-0 bg-slate-900/20 backdrop-blur-sm transition-opacity" onClick={() => setSelectedTask(null)}></div>
           <div className="relative w-full max-w-sm h-full bg-white dark:bg-slate-800 shadow-2xl animate-fade-in-left">
              <TaskDetailPanel tarea={selectedTask} onClose={() => setSelectedTask(null)} />
+          </div>
+        </div>
+      )}
+
+      {selectedProject && (
+        <div className="lg:hidden fixed inset-0 z-50 flex justify-end">
+          <div className="absolute inset-0 bg-slate-900/20 backdrop-blur-sm transition-opacity" onClick={() => setSelectedProject(null)}></div>
+          <div className="relative w-full max-w-sm h-full bg-white dark:bg-slate-800 shadow-2xl animate-fade-in-left">
+             <ExpedienteDetailPanel project={selectedProject} onClose={() => setSelectedProject(null)} />
           </div>
         </div>
       )}

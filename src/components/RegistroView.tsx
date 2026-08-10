@@ -29,20 +29,56 @@ export default function RegistroView({ user, searchQuery = '', onSelectTask }: P
       const tareasData: Tarea[] = [];
       snapshot.forEach((doc) => {
         const data = doc.data();
-        if (!data.isTemplate && !data.isConcejalia) {
+        if (!data.isTemplate && !data.isConcejalia && !data.isProject) {
           tareasData.push({ id: doc.id, ...data } as Tarea);
         }
       });
       
-      // Sort: high priority first, then date
+      const getTaskDueDate = (t: Tarea): number => {
+        if (t.dueDate) return t.dueDate;
+        if (t.fecha_vencimiento) return t.fecha_vencimiento;
+        if (t.createdAt) return typeof t.createdAt === 'number' ? t.createdAt : (t.createdAt.seconds ? t.createdAt.seconds * 1000 : 0);
+        if (t.fecha_creacion) return t.fecha_creacion;
+        return 9999999999999;
+      };
+
+      const getTaskSortOrder = (t: Tarea): number => {
+        const text = t.title || t.titulo || '';
+        const match = text.match(/^(\d+)[\.\s]/);
+        if (match) {
+          return parseInt(match[1], 10);
+        }
+        if (typeof t.orderIndex === 'number') return t.orderIndex;
+        return 9999;
+      };
+
+      // Ordenar por: 1º Fecha Límite (la más próxima primero), 2º Concejalía, 3º Expediente, 4º Nombre (orden natural)
       tareasData.sort((a, b) => {
-        const priorityScore: Record<string, number> = { 'alta': 3, 'media': 2, 'baja': 1 };
-        const scoreA = priorityScore[a.prioridad as string] || 2;
-        const scoreB = priorityScore[b.prioridad as string] || 2;
-        if (scoreA !== scoreB) return scoreB - scoreA;
-        const dateA = a.dueDate || a.fecha_vencimiento || 0;
-        const dateB = b.dueDate || b.fecha_vencimiento || 0;
-        return dateA - dateB;
+        // 1. Fecha Límite (la más próxima primero)
+        const dateA = getTaskDueDate(a);
+        const dateB = getTaskDueDate(b);
+        if (dateA !== dateB) return dateA - dateB;
+
+        // 2. Concejalía (alfabético)
+        const concA = a.concejalia || a.projectConcejalia || a.projectMasterCategory || 'ZZZ_SinConcejalia';
+        const concB = b.concejalia || b.projectConcejalia || b.projectMasterCategory || 'ZZZ_SinConcejalia';
+        const concComp = concA.localeCompare(concB, undefined, { sensitivity: 'base' });
+        if (concComp !== 0) return concComp;
+
+        // 3. Expediente / Proyecto (alfabético)
+        const projA = a.projectName || 'ZZZ_SinExpediente';
+        const projB = b.projectName || 'ZZZ_SinExpediente';
+        const projComp = projA.localeCompare(projB, undefined, { sensitivity: 'base' });
+        if (projComp !== 0) return projComp;
+
+        // 4. Nombre / Título (orden natural)
+        const orderA = getTaskSortOrder(a);
+        const orderB = getTaskSortOrder(b);
+        if (orderA !== orderB) return orderA - orderB;
+
+        const titleA = a.titulo || a.title || '';
+        const titleB = b.titulo || b.title || '';
+        return titleA.localeCompare(titleB, undefined, { numeric: true, sensitivity: 'base' });
       });
       
       setTareas(tareasData);
@@ -129,8 +165,7 @@ export default function RegistroView({ user, searchQuery = '', onSelectTask }: P
   };
 
   return (
-    <div className="flex-1 p-6 md:p-8 overflow-y-auto">
-      <div className="max-w-4xl mx-auto w-full flex flex-col gap-6 md:gap-8">
+    <div className="p-4 sm:p-6 md:p-8 max-w-7xl mx-auto w-full flex flex-col gap-6 md:gap-8 animate-fade-in">
         
         {/* HEADER */}
         <section className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 animate-fade-in-up">
@@ -267,8 +302,6 @@ export default function RegistroView({ user, searchQuery = '', onSelectTask }: P
             ))
           )}
         </section>
-
-      </div>
       
       {isCreatingTask && (
         <TaskCreateModal 

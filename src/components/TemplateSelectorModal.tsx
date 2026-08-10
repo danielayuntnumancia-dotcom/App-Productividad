@@ -6,6 +6,7 @@ import { EXPEDIENT_TEMPLATES } from '../constants/templates';
 import { ExpedienteTemplate, generateExpedientCode } from '../types';
 import ExpedienteBuilderModal from './ExpedienteBuilderModal';
 import { getConcejaliaStyle } from '../utils/concejaliaColors';
+import { useConcejalias } from '../hooks/useConcejalias';
 
 interface Props {
   user: User;
@@ -13,14 +14,51 @@ interface Props {
 }
 
 export default function TemplateSelectorModal({ user, onClose }: Props) {
+  const concejaliasList = useConcejalias(user.uid);
   const [firestoreTemplates, setFirestoreTemplates] = useState<ExpedienteTemplate[]>([]);
   const [allTemplates, setAllTemplates] = useState<ExpedienteTemplate[]>(EXPEDIENT_TEMPLATES);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>(EXPEDIENT_TEMPLATES[0].id);
+  const [selectedConcejalia, setSelectedConcejalia] = useState<string>('');
   const [nombreProyecto, setNombreProyecto] = useState('');
+  const [existingProjects, setExistingProjects] = useState<{ id: string; name: string; code: string }[]>([]);
+  const [selectedLinkedProjectId, setSelectedLinkedProjectId] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [showBuilder, setShowBuilder] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Escuchar expedientes existentes para vinculación cruzada
+  useEffect(() => {
+    const q = query(
+      collection(db, 'tareas'),
+      where('userId', '==', user.uid)
+    );
+
+    const unsub = onSnapshot(q, (snapshot) => {
+      const projMap: Record<string, { id: string; name: string; code: string }> = {};
+      snapshot.forEach((d) => {
+        const data = d.data();
+        if (data.isProject) {
+          projMap[data.id || d.id] = {
+            id: data.id || d.id,
+            name: data.name || data.projectName,
+            code: data.expedientCode || 'EXP-2026-N/A'
+          };
+        } else if (data.projectId && data.projectName && !data.isTemplate && !data.isConcejalia) {
+          if (!projMap[data.projectId]) {
+            projMap[data.projectId] = {
+              id: data.projectId,
+              name: data.projectName,
+              code: data.expedientCode || 'EXP-2026-N/A'
+            };
+          }
+        }
+      });
+      setExistingProjects(Object.values(projMap));
+    });
+
+    return () => unsub();
+  }, [user.uid]);
 
   // Escuchar las plantillas guardadas en la colección autorizada 'tareas'
   useEffect(() => {
@@ -65,6 +103,12 @@ export default function TemplateSelectorModal({ user, onClose }: Props) {
 
   const selectedTemplate = allTemplates.find(t => t.id === selectedTemplateId) || allTemplates[0] || EXPEDIENT_TEMPLATES[0];
 
+  useEffect(() => {
+    if (selectedTemplate) {
+      setSelectedConcejalia(selectedTemplate.concejalia || selectedTemplate.masterCategory || concejaliasList[0] || 'General');
+    }
+  }, [selectedTemplateId, concejaliasList]);
+
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!nombreProyecto.trim() || isGenerating) return;
@@ -75,14 +119,33 @@ export default function TemplateSelectorModal({ user, onClose }: Props) {
       const batch = writeBatch(db);
       const projName = nombreProyecto.trim();
       const now = Date.now();
-      const conc = selectedTemplate.concejalia || selectedTemplate.masterCategory || 'General';
+      const conc = selectedConcejalia || selectedTemplate.concejalia || selectedTemplate.masterCategory || 'General';
       const generatedProjectId = `proj_${now}_${Math.random().toString(36).substring(2, 7)}`;
       const expCode = generateExpedientCode();
 
-      // Insertar las tareas en la colección 'tareas' autorizada por Firestore
+      // ACCIÓN A: Guardar la cabecera de proyecto en la colección autorizada 'tareas' con isProject: true
+      const projectRef = doc(collection(db, 'tareas'));
+      batch.set(projectRef, {
+        isProject: true,
+        id: generatedProjectId,
+        projectId: generatedProjectId,
+        name: projName,
+        projectName: projName,
+        type: 'template',
+        concejalia: conc,
+        projectConcejalia: conc,
+        status: 'active',
+        expedientCode: expCode,
+        linkedExpedientId: selectedLinkedProjectId || '',
+        isInMyDay: true,
+        userId: user.uid,
+        fecha_creacion: now
+      });
+
+      // ACCIÓN B: Insertar las tareas en la colección 'tareas'
       const tareasRef = collection(db, 'tareas');
 
-      selectedTemplate.tasks.forEach((task) => {
+      selectedTemplate.tasks.forEach((task, index) => {
         const newTaskRef = doc(tareasRef);
         batch.set(newTaskRef, {
           projectId: generatedProjectId,
@@ -91,11 +154,12 @@ export default function TemplateSelectorModal({ user, onClose }: Props) {
           projectConcejalia: conc,
           projectMasterCategory: conc,
           expedientCode: expCode,
-          linkedExpedientId: '',
+          linkedExpedientId: selectedLinkedProjectId || '',
+          orderIndex: index + 1,
           title: task.title,
           titulo: `${task.title} - ${projName}`,
-          notes: task.notes || '',
-          notas: task.notes || '',
+          notes: task.notes || selectedTemplate.description || '',
+          notas: task.notes || selectedTemplate.description || '',
           status: task.status,
           completada: task.status === 'completed',
           estimatedTimeMin: task.estimatedTimeMin,
@@ -262,6 +326,41 @@ export default function TemplateSelectorModal({ user, onClose }: Props) {
                 placeholder="Ej. Actuación Cantajuegos"
                 autoFocus
               />
+            </div>
+
+            {/* Concejalía Responsable Dropdown */}
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                Concejalía Responsable *
+              </label>
+              <select
+                value={selectedConcejalia}
+                onChange={(e) => setSelectedConcejalia(e.target.value)}
+                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-medium text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors"
+              >
+                {concejaliasList.map((cName) => (
+                  <option key={cName} value={cName}>{cName}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Vinculación a Expediente Existente */}
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                Vincular a Expediente Existente (Opcional)
+              </label>
+              <select
+                value={selectedLinkedProjectId}
+                onChange={(e) => setSelectedLinkedProjectId(e.target.value)}
+                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm font-medium text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors"
+              >
+                <option value="">-- Sin expediente vinculado (Independiente) --</option>
+                {existingProjects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    🔗 {p.code} - {p.name}
+                  </option>
+                ))}
+              </select>
             </div>
 
             {/* Template Task Preview */}

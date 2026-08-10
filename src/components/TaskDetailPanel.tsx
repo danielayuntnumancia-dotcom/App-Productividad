@@ -3,6 +3,7 @@ import { Tarea, TaskStatus } from '../types';
 import { doc, updateDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 import CustomDatePicker from './CustomDatePicker';
+import { useConcejalias } from '../hooks/useConcejalias';
 
 interface Props {
   tarea: Tarea;
@@ -10,6 +11,7 @@ interface Props {
 }
 
 export default function TaskDetailPanel({ tarea, onClose }: Props) {
+  const concejaliasList = useConcejalias(tarea.userId);
   const panelRef = useRef<HTMLDivElement>(null);
   const [titulo, setTitulo] = useState(tarea.titulo);
   const [notas, setNotas] = useState(tarea.notas || '');
@@ -50,8 +52,7 @@ export default function TaskDetailPanel({ tarea, onClose }: Props) {
     
   const [prioridad, setPrioridad] = useState<'baja' | 'media' | 'alta'>(defaultPriority);
   
-  const defaultConcejalia = tarea.concejalia || '';
-  const [concejalia, setConcejalia] = useState<'Medioambiente' | 'Seguridad' | 'Transporte' | 'Hacienda' | 'Entidades privadas' | ''>(defaultConcejalia);
+  const [concejalia, setConcejalia] = useState<string>(tarea.concejalia || '');
   
   const [isSaving, setIsSaving] = useState(false);
 
@@ -362,15 +363,13 @@ export default function TaskDetailPanel({ tarea, onClose }: Props) {
           <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Concejalía</label>
           <select
             value={concejalia}
-            onChange={(e) => setConcejalia(e.target.value as any)}
-            className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors"
+            onChange={(e) => setConcejalia(e.target.value)}
+            className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors font-medium"
           >
-            <option value="">Selecciona...</option>
-            <option value="Medioambiente">Medioambiente</option>
-            <option value="Seguridad">Seguridad</option>
-            <option value="Transporte">Transporte</option>
-            <option value="Hacienda">Hacienda</option>
-            <option value="Entidades privadas">Entidades privadas</option>
+            <option value="">Selecciona Concejalía...</option>
+            {concejaliasList.map((cName) => (
+              <option key={cName} value={cName}>{cName}</option>
+            ))}
           </select>
         </div>
 

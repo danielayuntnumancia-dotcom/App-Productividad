@@ -3,26 +3,21 @@ import { collection, query, where, onSnapshot, addDoc, doc, writeBatch, serverTi
 import { db } from '../firebaseConfig';
 import { User } from 'firebase/auth';
 import { ConcejaliaItem, TemplateTask, TaskStatus, generateExpedientCode } from '../types';
+import { useConcejalias } from '../hooks/useConcejalias';
 
 interface Props {
   user: User;
   onClose: () => void;
 }
 
-const DEFAULT_CONCEJALIAS = [
-  "Economía y Hacienda",
-  "Medio Ambiente",
-  "Policía Local y Movilidad",
-  "Entidades Urbanísticas de Conservación"
-];
-
 export default function ExpedienteBuilderModal({ user, onClose }: Props) {
-  const [concejalias, setConcejalias] = useState<ConcejaliaItem[]>([]);
+  const concejaliasList = useConcejalias(user.uid);
   const [selectedConcejaliaName, setSelectedConcejaliaName] = useState<string>('');
   const [isCreatingConcejalia, setIsCreatingConcejalia] = useState(false);
   const [newConcejaliaName, setNewConcejaliaName] = useState('');
   
   const [nombreProyecto, setNombreProyecto] = useState('');
+  const [notasProyecto, setNotasProyecto] = useState('');
   const [existingProjects, setExistingProjects] = useState<{ id: string; name: string; code: string }[]>([]);
   const [selectedLinkedProjectId, setSelectedLinkedProjectId] = useState<string>('');
 
@@ -47,7 +42,13 @@ export default function ExpedienteBuilderModal({ user, onClose }: Props) {
       const projMap: Record<string, { id: string; name: string; code: string }> = {};
       snapshot.forEach((d) => {
         const data = d.data();
-        if (data.projectId && data.projectName && !data.isTemplate && !data.isConcejalia) {
+        if (data.isProject) {
+          projMap[data.id || d.id] = {
+            id: data.id || d.id,
+            name: data.name || data.projectName,
+            code: data.expedientCode || 'EXP-2026-N/A'
+          };
+        } else if (data.projectId && data.projectName && !data.isTemplate && !data.isConcejalia) {
           if (!projMap[data.projectId]) {
             projMap[data.projectId] = {
               id: data.projectId,
@@ -63,30 +64,14 @@ export default function ExpedienteBuilderModal({ user, onClose }: Props) {
     return () => unsub();
   }, [user.uid]);
 
-  // Cargar concejalías del usuario desde la colección autorizada 'tareas'
+  // Si aún no hay concejalía seleccionada, tomar la primera de la lista unificada
   useEffect(() => {
-    const q = query(
-      collection(db, 'tareas'),
-      where('userId', '==', user.uid),
-      where('isConcejalia', '==', true)
-    );
+    if (concejaliasList.length > 0 && !selectedConcejaliaName) {
+      setSelectedConcejaliaName(concejaliasList[0]);
+    }
+  }, [concejaliasList]);
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const items: ConcejaliaItem[] = [];
-      snapshot.forEach((d) => {
-        items.push({ id: d.id, ...d.data() } as ConcejaliaItem);
-      });
-      setConcejalias(items);
-
-      if (items.length > 0 && !selectedConcejaliaName) {
-        setSelectedConcejaliaName(items[0].name);
-      } else if (items.length === 0 && !selectedConcejaliaName) {
-        setSelectedConcejaliaName(DEFAULT_CONCEJALIAS[0]);
-      }
-    });
-
-    return () => unsubscribe();
-  }, [user.uid, selectedConcejaliaName]);
+  const allConcejaliaOptions = concejaliasList;
 
   const handleSaveNewConcejalia = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -153,10 +138,30 @@ export default function ExpedienteBuilderModal({ user, onClose }: Props) {
       const generatedProjectId = `proj_${now}_${Math.random().toString(36).substring(2, 7)}`;
       const expCode = generateExpedientCode();
 
-      // ACCIÓN A & B: Escribir tareas dinámicas en la colección 'tareas' vinculadas al projectId
+      // ACCIÓN A: Guardar la cabecera del proyecto en la colección autorizada 'tareas' con isProject: true
+      const projectRef = doc(collection(db, 'tareas'));
+      batch.set(projectRef, {
+        isProject: true,
+        id: generatedProjectId,
+        projectId: generatedProjectId,
+        name: projName,
+        projectName: projName,
+        type: 'custom',
+        concejalia: selectedConcejaliaName,
+        projectConcejalia: selectedConcejaliaName,
+        status: 'active',
+        expedientCode: expCode,
+        linkedExpedientId: selectedLinkedProjectId || '',
+        notas: notasProyecto.trim(),
+        notes: notasProyecto.trim(),
+        userId: user.uid,
+        fecha_creacion: now
+      });
+
+      // ACCIÓN B: Escribir tareas dinámicas en la colección 'tareas' vinculadas al projectId
       const tareasRef = collection(db, 'tareas');
 
-      validTasks.forEach((task) => {
+      validTasks.forEach((task, index) => {
         const newTaskRef = doc(tareasRef);
         batch.set(newTaskRef, {
           projectId: generatedProjectId,
@@ -166,10 +171,11 @@ export default function ExpedienteBuilderModal({ user, onClose }: Props) {
           projectMasterCategory: selectedConcejaliaName,
           expedientCode: expCode,
           linkedExpedientId: selectedLinkedProjectId || '',
+          orderIndex: index + 1,
           title: task.title.trim(),
           titulo: `${task.title.trim()} - ${projName}`,
-          notes: task.notes || '',
-          notas: task.notes || '',
+          notes: task.notes || notasProyecto.trim() || '',
+          notas: task.notes || notasProyecto.trim() || '',
           status: task.status,
           completada: task.status === 'completed',
           estimatedTimeMin: Number(task.estimatedTimeMin) || 15,
@@ -220,10 +226,7 @@ export default function ExpedienteBuilderModal({ user, onClose }: Props) {
     }
   };
 
-  // Combinar concejalías de Firestore con predeterminadas
-  const allConcejaliaOptions = Array.from(
-    new Set([...concejalias.map(c => c.name), ...DEFAULT_CONCEJALIAS])
-  );
+
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
@@ -347,6 +350,20 @@ export default function ExpedienteBuilderModal({ user, onClose }: Props) {
                 value={nombreProyecto}
                 onChange={(e) => setNombreProyecto(e.target.value)}
                 className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl text-sm font-medium text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 transition-all outline-none"
+              />
+            </div>
+
+            {/* SECCIÓN NOTAS / ANOTACIONES DEL EXPEDIENTE */}
+            <div className="space-y-2">
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                Anotaciones / Notas del Expediente (Opcional)
+              </label>
+              <textarea 
+                rows={3}
+                placeholder="Observaciones generales o detalles de interés sobre este expediente..."
+                value={notasProyecto}
+                onChange={(e) => setNotasProyecto(e.target.value)}
+                className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl text-sm font-medium text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 transition-all outline-none resize-none"
               />
             </div>
 

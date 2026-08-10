@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebaseConfig';
 import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, deleteDoc, writeBatch } from 'firebase/firestore';
-import { Tarea } from '../types';
+import { Tarea, Project } from '../types';
 import { User } from 'firebase/auth';
 import TaskCreateModal from './TaskCreateModal';
 import TemplateSelectorModal from './TemplateSelectorModal';
@@ -11,9 +11,10 @@ interface Props {
   user: User;
   searchQuery?: string;
   onSelectTask: (tarea: Tarea | null) => void;
+  onSelectProject?: (project: Project | null) => void;
 }
 
-export default function MiDiaView({ user, searchQuery = '', onSelectTask }: Props) {
+export default function MiDiaView({ user, searchQuery = '', onSelectTask, onSelectProject }: Props) {
   const [tareas, setTareas] = useState<Tarea[]>([]);
   const [expandedExpedientes, setExpandedExpedientes] = useState<Set<string>>(new Set());
   const [isCreatingTask, setIsCreatingTask] = useState(false);
@@ -31,7 +32,7 @@ export default function MiDiaView({ user, searchQuery = '', onSelectTask }: Prop
         tareasData.push({ id: doc.id, ...doc.data() } as Tarea);
       });
       // Filtrar tareas que pertenecen a "Mi Día" (isInMyDay !== false) y no están completadas
-      const valid = tareasData.filter(t => !(t as any).isTemplate && !(t as any).isConcejalia && (t.isInMyDay !== false) && t.status !== 'completed' && !t.completada);
+      const valid = tareasData.filter(t => !(t as any).isTemplate && !(t as any).isConcejalia && !(t as any).isProject && (t.isInMyDay !== false) && t.status !== 'completed' && !t.completada);
       setTareas(valid);
 
       // Expandir por defecto los expedientes encontrados
@@ -173,8 +174,31 @@ export default function MiDiaView({ user, searchQuery = '', onSelectTask }: Prop
     }
   };
 
+  const getTaskSortOrder = (t: Tarea): number => {
+    const text = t.title || t.titulo || '';
+    const match = text.match(/^(\d+)[\.\s]/);
+    if (match) {
+      return parseInt(match[1], 10);
+    }
+    if (typeof t.orderIndex === 'number') return t.orderIndex;
+    return 9999;
+  };
+
+  const sortTasksNaturally = (tasks: Tarea[]): Tarea[] => {
+    return [...tasks].sort((a, b) => {
+      const orderA = getTaskSortOrder(a);
+      const orderB = getTaskSortOrder(b);
+      if (orderA !== orderB) {
+        return orderA - orderB;
+      }
+      const titleA = a.titulo || a.title || '';
+      const titleB = b.titulo || b.title || '';
+      return titleA.localeCompare(titleB, undefined, { numeric: true, sensitivity: 'base' });
+    });
+  };
+
   // Agrupar tareas por expediente
-  const expedientesMap: Record<string, { id: string; name: string; concejalia?: string; code?: string; tasks: Tarea[] }> = {};
+  const expedientesMap: Record<string, { id: string; name: string; concejalia?: string; code?: string; linkedExpedientId?: string; tasks: Tarea[] }> = {};
   const independentTasks: Tarea[] = [];
 
   filteredTareas.forEach(t => {
@@ -185,8 +209,11 @@ export default function MiDiaView({ user, searchQuery = '', onSelectTask }: Prop
           name: t.projectName,
           concejalia: t.concejalia || t.projectConcejalia || t.projectMasterCategory || 'General',
           code: t.expedientCode,
+          linkedExpedientId: t.linkedExpedientId,
           tasks: []
         };
+      } else if (!expedientesMap[t.projectId].linkedExpedientId && t.linkedExpedientId) {
+        expedientesMap[t.projectId].linkedExpedientId = t.linkedExpedientId;
       }
       expedientesMap[t.projectId].tasks.push(t);
     } else {
@@ -194,7 +221,26 @@ export default function MiDiaView({ user, searchQuery = '', onSelectTask }: Prop
     }
   });
 
-  const expedientesList = Object.values(expedientesMap);
+  // Obtener la fecha límite más cercana de un expediente para ordenación cronológica
+  const getExpedientDueDate = (exp: { tasks: Tarea[] }): number => {
+    const dates = exp.tasks.map(t => t.dueDate || t.fecha_vencimiento).filter(Boolean) as number[];
+    if (dates.length > 0) return Math.min(...dates);
+    return 9999999999999;
+  };
+
+  // Ordenar tareas dentro de cada expediente y tareas independientes
+  Object.values(expedientesMap).forEach(exp => {
+    exp.tasks = sortTasksNaturally(exp.tasks);
+  });
+  const sortedIndependentTasks = sortTasksNaturally(independentTasks);
+
+  // Ordenar expedientes cronológicamente por su fecha límite más próxima
+  const expedientesList = Object.values(expedientesMap).sort((a, b) => {
+    const dateA = getExpedientDueDate(a);
+    const dateB = getExpedientDueDate(b);
+    if (dateA !== dateB) return dateA - dateB;
+    return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+  });
 
   const renderTaskCard = (tarea: Tarea) => {
     const rawDueDate = tarea.dueDate || tarea.fecha_vencimiento;
@@ -307,8 +353,8 @@ export default function MiDiaView({ user, searchQuery = '', onSelectTask }: Prop
   };
 
   return (
-    <div className="flex-1 p-6 md:p-8 overflow-y-auto">
-      <div className="max-w-4xl mx-auto w-full flex flex-col gap-8 md:gap-10">
+    <div className="flex-1 p-4 sm:p-6 md:p-8 w-full min-h-full flex flex-col">
+      <div className="max-w-7xl mx-auto w-full flex-1 flex flex-col gap-6 md:gap-8">
         
         {/* HEADER & CAPACITY BAR */}
         <section className="flex flex-col gap-4 animate-fade-in-up">
@@ -412,10 +458,48 @@ export default function MiDiaView({ user, searchQuery = '', onSelectTask }: Prop
                                 <p className="text-xs text-slate-500 dark:text-slate-400">
                                   {exp.tasks.length} {exp.tasks.length === 1 ? 'tarea en Mi Día' : 'tareas en Mi Día'}
                                 </p>
+                                {(() => {
+                                  const linkedParent = exp.linkedExpedientId 
+                                    ? expedientesList.find(p => p.id === exp.linkedExpedientId || p.code === exp.linkedExpedientId) 
+                                    : null;
+                                  if (!linkedParent) return null;
+                                  return (
+                                    <p className="text-[11px] text-indigo-600 dark:text-indigo-400 font-medium flex items-center gap-1 mt-0.5">
+                                      <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                                      </svg>
+                                      <span>Vinculado a: {linkedParent.code ? `${linkedParent.code} - ` : ''}{linkedParent.name}</span>
+                                    </p>
+                                  );
+                                })()}
                               </div>
                             </div>
 
                             <div className="flex items-center gap-2 shrink-0">
+                              {/* EDITAR EXPEDIENTE */}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (onSelectProject) {
+                                    onSelectProject({
+                                      id: exp.id,
+                                      name: exp.name,
+                                      concejalia: exp.concejalia || 'General',
+                                      type: 'custom',
+                                      status: 'active',
+                                      expedientCode: exp.code,
+                                      userId: user.uid
+                                    });
+                                  }
+                                }}
+                                className="w-8 h-8 flex items-center justify-center rounded-xl bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 transition-all cursor-pointer"
+                                title="Editar Expediente (Nombre, Concejalía, Fecha)"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                </svg>
+                              </button>
+
                               {/* BORRADO DIRECTO DEL EXPEDIENTE */}
                               <button
                                 onClick={(e) => handleDeleteExpedienteDirect(exp.id, exp.name, e)}
@@ -449,7 +533,7 @@ export default function MiDiaView({ user, searchQuery = '', onSelectTask }: Prop
                     </h3>
                   )}
                   <div className="space-y-3">
-                    {independentTasks.map(t => renderTaskCard(t))}
+                    {sortedIndependentTasks.map(t => renderTaskCard(t))}
                   </div>
                 </div>
               )}

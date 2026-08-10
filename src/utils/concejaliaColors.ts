@@ -28,6 +28,13 @@ const PREDEFINED_COLORS: Record<string, ConcejaliaStyle> = {
     dot: 'bg-amber-500',
     badgeClass: 'bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800'
   },
+  'Transporte': {
+    bg: 'bg-cyan-50 dark:bg-cyan-950/40',
+    text: 'text-cyan-700 dark:text-cyan-300',
+    border: 'border-cyan-200 dark:border-cyan-800',
+    dot: 'bg-cyan-500',
+    badgeClass: 'bg-cyan-100 dark:bg-cyan-900/50 text-cyan-700 dark:text-cyan-300 border-cyan-200 dark:border-cyan-800'
+  },
   'Entidades Urbanísticas de Conservación': {
     bg: 'bg-purple-50 dark:bg-purple-950/40',
     text: 'text-purple-700 dark:text-purple-300',
