@@ -59,9 +59,10 @@ export default function CalendarioView({ user, searchQuery = '', onSelectTask }:
   const filteredTareas = tareas.filter(t => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
+    const taskNote = t.notas || t.notes || '';
     return (
       t.titulo.toLowerCase().includes(q) ||
-      (t.notas && t.notas.toLowerCase().includes(q))
+      taskNote.toLowerCase().includes(q)
     );
   });
 
@@ -326,7 +327,7 @@ export default function CalendarioView({ user, searchQuery = '', onSelectTask }:
                 </div>
                 <div className="flex-1 min-w-0 p-4 sm:p-5">
                   <h4 className={`font-semibold text-base truncate ${t.completada ? 'line-through' : 'text-slate-800 dark:text-slate-100'}`}>{t.titulo}</h4>
-                  {t.notas && <p className="text-sm text-slate-500 mt-1 line-clamp-2 leading-relaxed">{t.notas}</p>}
+                  {(t.notas || t.notes) && <p className="text-sm text-slate-500 mt-1 line-clamp-2 leading-relaxed">{t.notas || t.notes}</p>}
                   <div className="flex flex-wrap gap-3 mt-3">
                     <span className="text-xs font-medium text-slate-500 dark:text-slate-400 bg-white/50 dark:bg-slate-800/50 px-2 py-1 rounded-md flex items-center gap-1">
                       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>

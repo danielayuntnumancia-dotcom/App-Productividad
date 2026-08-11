@@ -117,9 +117,10 @@ export default function MiDiaView({ user, searchQuery = '', onSelectTask, onSele
   const filteredTareas = tareas.filter(t => {
     if (!searchQuery.trim()) return true;
     const query = searchQuery.toLowerCase();
+    const taskNote = t.notas || t.notes || '';
     return (
       t.titulo.toLowerCase().includes(query) ||
-      (t.notas && t.notas.toLowerCase().includes(query))
+      taskNote.toLowerCase().includes(query)
     );
   });
 
@@ -316,9 +317,9 @@ export default function MiDiaView({ user, searchQuery = '', onSelectTask, onSele
               </span>
             </div>
           )}
-          {tarea.notas && (
+          {(tarea.notas || tarea.notes) && (
             <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 line-clamp-2 leading-relaxed">
-              {tarea.notas}
+              {tarea.notas || tarea.notes}
             </p>
           )}
           <div className="flex flex-wrap items-center gap-3 mt-3">
@@ -402,7 +403,6 @@ export default function MiDiaView({ user, searchQuery = '', onSelectTask, onSele
         </section>
 
         {/* PLANIFICADOR (Expedientes Accordions + Independent Tasks) */}
-
         {/* PLANIFICADOR (Expedientes Accordions + Independent Tasks) */}
         <section className="flex flex-col gap-6 animate-fade-in-up" style={{ animationDelay: '200ms' }}>
           {filteredTareas.length === 0 ? (
@@ -410,119 +410,173 @@ export default function MiDiaView({ user, searchQuery = '', onSelectTask, onSele
           ) : (
             <>
               {/* BLOQUE DE EXPEDIENTES EN MI DÍA */}
-              {expedientesList.length > 0 && (
-                <div className="space-y-4">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-2">
-                    <span>📁 Expedientes en Mi Día ({expedientesList.length})</span>
-                  </h3>
+              {expedientesList.length > 0 && (() => {
+                const isContratoMenorExpedient = (exp: typeof expedientesList[0]) => {
+                  const nameLower = exp.name.toLowerCase();
+                  if (nameLower.includes('contrato menor') || nameLower.includes('contrato m')) return true;
+                  return exp.tasks.some(t => (t as any).isContratoMenor || (t as any).templateId === 'contrato_menor');
+                };
 
-                  <div className="space-y-4">
-                    {expedientesList.map(exp => {
-                      const isExpanded = expandedExpedientes.has(exp.id);
-                      const cStyle = getConcejaliaStyle(exp.concejalia);
+                const cmExpedientes = expedientesList.filter(isContratoMenorExpedient);
+                const regularExpedientes = expedientesList.filter(e => !isContratoMenorExpedient(e));
+                const isCMMasterExpanded = expandedExpedientes.has('master_cm_midia');
 
-                      return (
-                        <div 
-                          key={exp.id}
-                          className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-200"
-                        >
-                          {/* CABECERA EXPEDIENTE */}
-                          <div 
-                            onClick={() => toggleExpediente(exp.id)}
-                            className="p-4 flex items-center justify-between cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors"
-                          >
-                            <div className="flex items-center gap-3 min-w-0">
-                              <button className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
-                                <svg 
-                                  className={`w-4 h-4 transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`}
-                                  fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                                >
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
-                                </svg>
-                              </button>
+                const renderExpedientItem = (exp: typeof expedientesList[0]) => {
+                  const isExpanded = expandedExpedientes.has(exp.id);
+                  const cStyle = getConcejaliaStyle(exp.concejalia);
 
-                              <div className="min-w-0 space-y-0.5">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <h4 className="font-bold text-slate-800 dark:text-slate-100 text-sm truncate">
-                                    📁 {exp.name}
-                                  </h4>
-                                  {exp.code && (
-                                    <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 shrink-0">
-                                      {exp.code}
-                                    </span>
-                                  )}
-                                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${cStyle.badgeClass}`}>
-                                    {exp.concejalia}
-                                  </span>
-                                </div>
-                                <p className="text-xs text-slate-500 dark:text-slate-400">
-                                  {exp.tasks.length} {exp.tasks.length === 1 ? 'tarea en Mi Día' : 'tareas en Mi Día'}
+                  return (
+                    <div 
+                      key={exp.id}
+                      className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-200"
+                    >
+                      {/* CABECERA EXPEDIENTE */}
+                      <div 
+                        onClick={() => toggleExpediente(exp.id)}
+                        className="p-4 sm:p-5 flex items-center justify-between cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <button className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                            <svg 
+                              className={`w-4 h-4 transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`}
+                              fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                            >
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                            </svg>
+                          </button>
+
+                          <div className="min-w-0 space-y-0.5">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h4 className="font-bold text-slate-800 dark:text-slate-100 text-sm truncate">
+                                {isContratoMenorExpedient(exp) ? '📜' : '📁'} {exp.name}
+                              </h4>
+                              {exp.code && (
+                                <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 shrink-0">
+                                  {exp.code}
+                                </span>
+                              )}
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${cStyle.badgeClass}`}>
+                                {exp.concejalia}
+                              </span>
+                            </div>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">
+                              {exp.tasks.length} {exp.tasks.length === 1 ? 'tarea en Mi Día' : 'tareas en Mi Día'}
+                            </p>
+                            {(() => {
+                              const linkedParent = exp.linkedExpedientId 
+                                ? expedientesList.find(p => p.id === exp.linkedExpedientId || p.code === exp.linkedExpedientId) 
+                                : null;
+                              if (!linkedParent) return null;
+                              return (
+                                <p className="text-[11px] text-indigo-600 dark:text-indigo-400 font-medium flex items-center gap-1 mt-0.5">
+                                  <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                                  </svg>
+                                  <span>Vinculado a: {linkedParent.code ? `${linkedParent.code} - ` : ''}{linkedParent.name}</span>
                                 </p>
-                                {(() => {
-                                  const linkedParent = exp.linkedExpedientId 
-                                    ? expedientesList.find(p => p.id === exp.linkedExpedientId || p.code === exp.linkedExpedientId) 
-                                    : null;
-                                  if (!linkedParent) return null;
-                                  return (
-                                    <p className="text-[11px] text-indigo-600 dark:text-indigo-400 font-medium flex items-center gap-1 mt-0.5">
-                                      <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                                      </svg>
-                                      <span>Vinculado a: {linkedParent.code ? `${linkedParent.code} - ` : ''}{linkedParent.name}</span>
-                                    </p>
-                                  );
-                                })()}
+                              );
+                            })()}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          {/* EDITAR EXPEDIENTE */}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (onSelectProject) {
+                                onSelectProject({
+                                  id: exp.id,
+                                  name: exp.name,
+                                  concejalia: exp.concejalia || 'General',
+                                  type: 'custom',
+                                  status: 'active',
+                                  expedientCode: exp.code,
+                                  userId: user.uid
+                                });
+                              }
+                            }}
+                            className="w-8 h-8 flex items-center justify-center rounded-xl bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 transition-all cursor-pointer"
+                            title="Editar Expediente"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                            </svg>
+                          </button>
+
+                          {/* BORRADO DIRECTO DEL EXPEDIENTE */}
+                          <button
+                            onClick={(e) => handleDeleteExpedienteDirect(exp.id, exp.name, e)}
+                            className="w-8 h-8 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-700/60 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 transition-all cursor-pointer"
+                            title="Eliminar Expediente completo"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* TAREAS HIJAS DEL EXPEDIENTE */}
+                      {isExpanded && (
+                        <div className="p-4 bg-slate-50/50 dark:bg-slate-900/30 border-t border-slate-100 dark:border-slate-700/50 space-y-3">
+                          {exp.tasks.map(t => renderTaskCard(t))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                };
+
+                return (
+                  <div className="space-y-4">
+                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                      Expedientes en Mi Día ({expedientesList.length})
+                    </h3>
+
+                    <div className="space-y-3">
+                      {/* TARJETA MÁSTER DE CONTRATOS MENORES EN MI DÍA */}
+                      {cmExpedientes.length > 0 && (
+                        <div className="bg-indigo-50/70 dark:bg-indigo-950/30 border-2 border-indigo-200 dark:border-indigo-800/70 rounded-2xl overflow-hidden shadow-xs">
+                          <div
+                            onClick={() => toggleExpediente('master_cm_midia')}
+                            className="p-4 flex items-center justify-between cursor-pointer hover:bg-indigo-100/50 dark:hover:bg-indigo-900/40 transition-colors"
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold text-base shadow-sm shrink-0">
+                                📜
+                              </div>
+                              <div>
+                                <h4 className="font-bold text-indigo-950 dark:text-indigo-100 text-sm sm:text-base">
+                                  Contratos Menores en Mi Día
+                                </h4>
+                                <p className="text-xs text-indigo-600 dark:text-indigo-400 font-semibold">
+                                  {cmExpedientes.length} {cmExpedientes.length === 1 ? 'contrato activo hoy' : 'contratos activos hoy'}
+                                </p>
                               </div>
                             </div>
-
-                            <div className="flex items-center gap-2 shrink-0">
-                              {/* EDITAR EXPEDIENTE */}
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  if (onSelectProject) {
-                                    onSelectProject({
-                                      id: exp.id,
-                                      name: exp.name,
-                                      concejalia: exp.concejalia || 'General',
-                                      type: 'custom',
-                                      status: 'active',
-                                      expedientCode: exp.code,
-                                      userId: user.uid
-                                    });
-                                  }
-                                }}
-                                className="w-8 h-8 flex items-center justify-center rounded-xl bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 transition-all cursor-pointer"
-                                title="Editar Expediente (Nombre, Concejalía, Fecha)"
-                              >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                                </svg>
-                              </button>
-
-                              {/* BORRADO DIRECTO DEL EXPEDIENTE */}
-                              <button
-                                onClick={(e) => handleDeleteExpedienteDirect(exp.id, exp.name, e)}
-                                className="w-8 h-8 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-700/60 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 transition-all cursor-pointer"
-                                title="Eliminar Expediente completo"
-                              >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                              </button>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-indigo-100 text-indigo-700 dark:bg-indigo-900/60 dark:text-indigo-300">
+                                {isCMMasterExpanded ? 'Ocultar' : `Desplegar (${cmExpedientes.length})`}
+                              </span>
+                              <svg className={`w-5 h-5 text-indigo-600 dark:text-indigo-400 transition-transform duration-200 ${isCMMasterExpanded ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                              </svg>
                             </div>
                           </div>
 
-                          {/* TAREAS HIJAS DEL EXPEDIENTE */}
-                          {isExpanded && (
-                            <div className="p-4 bg-slate-50/50 dark:bg-slate-900/30 border-t border-slate-100 dark:border-slate-700/50 space-y-3">
-                              {exp.tasks.map(t => renderTaskCard(t))}
+                          {/* LISTA DE CONTRATOS MENORES */}
+                          {isCMMasterExpanded && (
+                            <div className="p-3 space-y-3 bg-white/60 dark:bg-slate-900/40 border-t border-indigo-100 dark:border-indigo-900/40">
+                              {cmExpedientes.map(exp => renderExpedientItem(exp))}
                             </div>
                           )}
                         </div>
-                      );
-                    })}
+                      )}
+
+                      {/* EXPEDIENTES REGULARES */}
+                      {regularExpedientes.map(exp => renderExpedientItem(exp))}
+                    </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
               {/* BLOQUE DE TAREAS INDEPENDIENTES */}
               {independentTasks.length > 0 && (

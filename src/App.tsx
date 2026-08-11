@@ -6,6 +6,7 @@ import MiDiaView from './components/MiDiaView';
 import RegistroView from './components/RegistroView';
 import CalendarioView from './components/CalendarioView';
 import ExpedientesView from './components/ExpedientesView';
+import ContratosMenoresView from './components/ContratosMenoresView';
 import DashboardView from './components/DashboardView';
 import TaskDetailPanel from './components/TaskDetailPanel';
 import ExpedienteDetailPanel from './components/ExpedienteDetailPanel';
@@ -14,7 +15,7 @@ import { Tarea, Project } from './types';
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [currentView, setCurrentView] = useState<'myday' | 'registro' | 'calendario' | 'expedientes' | 'dashboard'>('myday');
+  const [currentView, setCurrentView] = useState<'myday' | 'registro' | 'calendario' | 'expedientes' | 'contratos_menores' | 'dashboard'>('myday');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTask, setSelectedTask] = useState<Tarea | null>(null);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
@@ -120,6 +121,16 @@ export default function App() {
           </button>
 
           <button 
+            onClick={() => { setCurrentView('contratos_menores'); setSelectedTask(null); setSelectedProject(null); }}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-colors ${currentView === 'contratos_menores' ? 'bg-indigo-50 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/50'}`}
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            <span>Contratos Menores</span>
+          </button>
+
+          <button 
             onClick={() => { setCurrentView('dashboard'); setSelectedTask(null); setSelectedProject(null); }}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-colors ${currentView === 'dashboard' ? 'bg-indigo-50 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/50'}`}
           >
@@ -181,7 +192,7 @@ export default function App() {
                 <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg>
               </div>
               <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100 transition-colors duration-300">
-                {currentView === 'myday' ? 'Mi Día' : currentView === 'registro' ? 'Bandeja' : currentView === 'calendario' ? 'Calendario' : currentView === 'expedientes' ? 'Expedientes' : 'Analítica'}
+                {currentView === 'myday' ? 'Mi Día' : currentView === 'registro' ? 'Bandeja' : currentView === 'calendario' ? 'Calendario' : currentView === 'expedientes' ? 'Expedientes' : currentView === 'contratos_menores' ? 'Contratos Menores' : 'Analítica'}
               </h1>
             </div>
             {/* MOBILE ONLY BUTTONS IN HEADER */}
@@ -220,6 +231,8 @@ export default function App() {
             <CalendarioView user={user} searchQuery={searchQuery} onSelectTask={handleSelectTask} />
           ) : currentView === 'expedientes' ? (
             <ExpedientesView user={user} searchQuery={searchQuery} onSelectTask={handleSelectTask} onSelectProject={handleSelectProject} />
+          ) : currentView === 'contratos_menores' ? (
+            <ContratosMenoresView user={user} searchQuery={searchQuery} onSelectTask={handleSelectTask} onSelectProject={handleSelectProject} />
           ) : (
             <DashboardView user={user} />
           )}

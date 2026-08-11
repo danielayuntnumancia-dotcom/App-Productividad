@@ -120,9 +120,10 @@ export default function RegistroView({ user, searchQuery = '', onSelectTask }: P
 
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
+    const taskNote = t.notas || t.notes || '';
     return (
       t.titulo.toLowerCase().includes(q) ||
-      (t.notas && t.notas.toLowerCase().includes(q))
+      taskNote.toLowerCase().includes(q)
     );
   });
 
@@ -211,96 +212,108 @@ export default function RegistroView({ user, searchQuery = '', onSelectTask }: P
             </svg>
             Nuevo Expediente
           </button>
-        </section>
-
-        {/* TASK LIST */}
-        <section className="flex flex-col gap-3 animate-fade-in-up" style={{ animationDelay: '100ms' }}>
+              {/* LIST OF TASKS */}
+        <section className="space-y-3">
           {filteredTareas.length === 0 ? (
-            <div className="text-center py-12 bg-white dark:bg-slate-800 rounded-3xl border border-slate-100 dark:border-slate-700 transition-colors duration-300">
-              <svg className="w-16 h-16 mx-auto text-slate-300 dark:text-slate-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg>
-              <p className="text-slate-500 dark:text-slate-400 font-medium">No hay tareas en esta vista</p>
+            <div className="text-center py-12 bg-white dark:bg-slate-800 rounded-3xl border border-slate-100 dark:border-slate-700">
+              <p className="text-slate-500 dark:text-slate-400 font-medium">No hay tareas que coincidan con el filtro</p>
             </div>
           ) : (
-            filteredTareas.map(tarea => (
-              <div 
-                key={tarea.id} 
-                data-task-card="true"
-                className={`rounded-2xl border shadow-sm flex items-stretch group hover:shadow-md transition-all duration-300 cursor-pointer overflow-hidden ${tarea.completada ? 'opacity-60 grayscale-[0.5]' : ''} ${getPriorityStyle(tarea.prioridad)}`}
-                onClick={() => onSelectTask(tarea)}
-              >
-                <div className={`w-14 sm:w-16 flex items-start justify-center pt-5 shrink-0 transition-colors ${getConcejaliaBg(tarea.concejalia)}`}>
-                  <button 
-                    onClick={(e) => { e.stopPropagation(); handleCompleteTask(tarea.id!, tarea.completada); }}
-                    className={`w-6 h-6 mt-0.5 rounded-full border-2 flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
-                      tarea.completada 
-                        ? (tarea.concejalia ? 'bg-white text-black border-white' : 'bg-indigo-500 border-indigo-500 text-white') 
-                        : (tarea.concejalia ? 'border-white/60 hover:border-white text-white' : 'border-slate-300 dark:border-slate-600 hover:border-indigo-500 dark:hover:border-indigo-400 text-indigo-600 dark:text-indigo-400')
-                    }`}
-                  >
-                    <svg className={`w-4 h-4 ${tarea.completada ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} transition-opacity`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>
-                  </button>
-                </div>
-                <div className="flex-1 min-w-0 p-4 sm:p-5">
-                  <div className="flex items-center justify-between gap-2">
-                    <h3 className={`font-semibold truncate transition-colors duration-300 ${tarea.completada ? 'text-slate-500 dark:text-slate-400 line-through' : 'text-slate-800 dark:text-slate-100'}`}>
-                      {tarea.titulo}
-                    </h3>
-                    <div className="flex items-center gap-2 shrink-0">
-                      {getStatusBadge(tarea.status, tarea.blockedBy)}
-                      <button
-                        onClick={(e) => handleDeleteTaskDirect(tarea.id!, e)}
-                        className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 transition-all shrink-0 cursor-pointer"
-                        title="Eliminar tarea directamente"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                      </button>
+            filteredTareas.map((tarea) => {
+              const rawDueDate = tarea.dueDate || tarea.fecha_vencimiento;
+              const isOverdue = !!rawDueDate && rawDueDate < Date.now() && tarea.status !== 'completed' && !tarea.completada;
+              const taskNote = tarea.notas || tarea.notes;
+
+              return (
+                <div
+                  key={tarea.id}
+                  onClick={() => onSelectTask(tarea)}
+                  className={`p-4 sm:p-5 rounded-2xl border transition-all duration-200 cursor-pointer shadow-sm hover:shadow-md flex items-center justify-between gap-4 ${
+                    tarea.completada 
+                      ? 'bg-slate-50 dark:bg-slate-900/40 border-slate-200 dark:border-slate-800 opacity-75' 
+                      : getPriorityStyle(tarea.prioridad)
+                  }`}
+                >
+                  <div className="flex items-start gap-4 min-w-0">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleCompleteTask(tarea.id!, tarea.completada);
+                      }}
+                      className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors mt-0.5 ${
+                        tarea.completada 
+                          ? 'bg-emerald-500 border-emerald-500 text-white' 
+                          : 'border-slate-300 dark:border-slate-600 hover:border-indigo-500'
+                      }`}
+                    >
+                      {tarea.completada && (
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" />
+                        </svg>
+                      )}
+                    </button>
+
+                    <div className="min-w-0 space-y-1">
+                      <div className="flex items-center gap-2">
+                        <h3 className={`font-bold text-slate-800 dark:text-slate-100 ${tarea.completada ? 'line-through text-slate-400 dark:text-slate-500' : ''}`}>
+                          {tarea.titulo}
+                        </h3>
+                      </div>
+                      {tarea.projectName && (
+                        <div className="text-xs font-medium text-slate-500 dark:text-slate-400 flex flex-wrap items-center gap-1.5">
+                          {(() => {
+                            const conc = tarea.concejalia || tarea.projectConcejalia || tarea.projectMasterCategory;
+                            if (!conc) return null;
+                            const cStyle = getConcejaliaStyle(conc);
+                            return (
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${cStyle.badgeClass}`}>
+                                📁 {conc}
+                              </span>
+                            );
+                          })()}
+                          <span className="text-slate-600 dark:text-slate-300 font-semibold">
+                            {tarea.expedientCode ? `${tarea.expedientCode} - ` : ''}{tarea.projectName}
+                          </span>
+                        </div>
+                      )}
+                      {taskNote && (
+                        <p className={`text-sm mt-1 line-clamp-2 leading-relaxed ${tarea.completada ? 'text-slate-400 dark:text-slate-500' : 'text-slate-500 dark:text-slate-400'}`}>
+                          {taskNote}
+                        </p>
+                      )}
                     </div>
                   </div>
-                  {tarea.projectName && (
-                    <div className="text-xs font-medium text-slate-500 dark:text-slate-400 mt-1 flex flex-wrap items-center gap-1.5">
-                      {(() => {
-                        const conc = tarea.concejalia || tarea.projectConcejalia || tarea.projectMasterCategory;
-                        if (!conc) return null;
-                        const cStyle = getConcejaliaStyle(conc);
-                        return (
-                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${cStyle.badgeClass}`}>
-                            📁 {conc}
-                          </span>
-                        );
-                      })()}
-                      <span className="text-slate-600 dark:text-slate-300 font-semibold">
-                        {tarea.expedientCode ? `${tarea.expedientCode} - ` : ''}{tarea.projectName}
-                      </span>
-                    </div>
-                  )}
-                  {tarea.notas && (
-                    <p className={`text-sm mt-1 line-clamp-2 leading-relaxed ${tarea.completada ? 'text-slate-400 dark:text-slate-500' : 'text-slate-500 dark:text-slate-400'}`}>
-                      {tarea.notas}
-                    </p>
-                  )}
                   <div className="flex flex-wrap items-center gap-3 mt-3">
                     <span className="text-xs font-medium text-slate-500 dark:text-slate-400 bg-white/50 dark:bg-slate-800/50 px-2 py-1 rounded-md flex items-center gap-1 transition-colors duration-300">
                       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                      {tarea.tiempo_estimado}
+                      {tarea.estimatedTimeMin ? `${tarea.estimatedTimeMin} min` : tarea.tiempo_estimado}
                     </span>
                     {tarea.concejalia && (
                        <span className="text-xs font-medium text-slate-500 dark:text-slate-400 bg-white/50 dark:bg-slate-800/50 px-2 py-1 rounded-md transition-colors duration-300">
                          {tarea.concejalia}
                        </span>
                     )}
-                    {tarea.fecha_vencimiento && (
+                    {rawDueDate && (
                       <span className={`text-xs font-medium bg-white/50 dark:bg-slate-800/50 px-2 py-1 rounded-md flex items-center gap-1 transition-colors duration-300 ${
-                        tarea.fecha_vencimiento < Date.now() && !tarea.completada ? 'text-red-500 dark:text-red-400' : 'text-slate-500 dark:text-slate-400'
+                        isOverdue ? 'text-red-500 dark:text-red-400 font-semibold' : 'text-slate-500 dark:text-slate-400'
                       }`}>
                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                        {new Date(tarea.fecha_vencimiento).toLocaleDateString('es-ES', { month: 'short', day: 'numeric' })}
+                        {new Date(rawDueDate).toLocaleDateString('es-ES', { month: 'short', day: 'numeric' })}
                       </span>
                     )}
+                    <button
+                      onClick={(e) => handleDeleteTaskDirect(tarea.id!, e)}
+                      className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 transition-all shrink-0 cursor-pointer"
+                      title="Eliminar tarea directamente"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                    </button>
                   </div>
                 </div>
-              </div>
-            ))
+              );
+            })
           )}
+        </section>
         </section>
       
       {isCreatingTask && (

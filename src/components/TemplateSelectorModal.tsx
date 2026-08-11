@@ -123,6 +123,8 @@ export default function TemplateSelectorModal({ user, onClose }: Props) {
       const generatedProjectId = `proj_${now}_${Math.random().toString(36).substring(2, 7)}`;
       const expCode = generateExpedientCode();
 
+      const isCM = selectedTemplate.id === 'contrato_menor' || projName.toLowerCase().includes('contrato menor');
+
       // ACCIÓN A: Guardar la cabecera de proyecto en la colección autorizada 'tareas' con isProject: true
       const projectRef = doc(collection(db, 'tareas'));
       batch.set(projectRef, {
@@ -131,7 +133,9 @@ export default function TemplateSelectorModal({ user, onClose }: Props) {
         projectId: generatedProjectId,
         name: projName,
         projectName: projName,
-        type: 'template',
+        type: isCM ? 'contrato_menor' : 'template',
+        templateId: selectedTemplate.id,
+        isContratoMenor: isCM,
         concejalia: conc,
         projectConcejalia: conc,
         status: 'active',
@@ -155,6 +159,8 @@ export default function TemplateSelectorModal({ user, onClose }: Props) {
           projectMasterCategory: conc,
           expedientCode: expCode,
           linkedExpedientId: selectedLinkedProjectId || '',
+          templateId: selectedTemplate.id,
+          isContratoMenor: isCM,
           orderIndex: index + 1,
           title: task.title,
           titulo: `${task.title} - ${projName}`,

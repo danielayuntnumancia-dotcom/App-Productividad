@@ -19,6 +19,7 @@ export default function ExpedienteDetailPanel({ project, onClose }: Props) {
   const [concejalia, setConcejalia] = useState(project.concejalia || '');
   const [linkedExpedientId, setLinkedExpedientId] = useState(project.linkedExpedientId || '');
   const [notas, setNotas] = useState(project.notas || project.notes || '');
+  const [projectStatus, setProjectStatus] = useState<'active' | 'completed' | 'archived'>(project.status || 'active');
   const [existingProjects, setExistingProjects] = useState<{ id: string; name: string; code: string }[]>([]);
   const [tasks, setTasks] = useState<Tarea[]>([]);
 
@@ -149,8 +150,8 @@ export default function ExpedienteDetailPanel({ project, onClose }: Props) {
         orderIndex: tasks.length + 1,
         title: newTaskTitle.trim(),
         titulo: `${newTaskTitle.trim()} - ${projectName.trim() || project.name}`,
-        notes: notas.trim() || '',
-        notas: notas.trim() || '',
+        notes: '',
+        notas: '',
         status: 'todo',
         completada: false,
         estimatedTimeMin: minVal,
@@ -185,7 +186,7 @@ export default function ExpedienteDetailPanel({ project, onClose }: Props) {
       const newName = projectName.trim();
       const newDueDateMs = fechaVencimiento ? new Date(fechaVencimiento).getTime() : null;
 
-      // 1. Actualizar todas las tareas hijas del expediente (con modificaciones visuales)
+      // 1. Actualizar todas las tareas hijas del expediente (respetando sus anotaciones existentes)
       tasks.forEach((t) => {
         if (!t.id) return;
         const tRef = doc(db, 'tareas', t.id);
@@ -203,8 +204,6 @@ export default function ExpedienteDetailPanel({ project, onClose }: Props) {
           projectConcejalia: concejalia,
           projectMasterCategory: concejalia,
           linkedExpedientId: linkedExpedientId || '',
-          notas: notas.trim(),
-          notes: notas.trim(),
           orderIndex: orderIdx,
           title: currentTitle,
           titulo: `${currentTitle} - ${newName}`,
@@ -234,6 +233,7 @@ export default function ExpedienteDetailPanel({ project, onClose }: Props) {
           concejalia,
           projectConcejalia: concejalia,
           linkedExpedientId: linkedExpedientId || '',
+          status: projectStatus,
           notas: notas.trim(),
           notes: notas.trim(),
           userId: project.userId,
@@ -357,6 +357,22 @@ export default function ExpedienteDetailPanel({ project, onClose }: Props) {
             className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-4 text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors resize-none font-medium"
             placeholder="Escribe notas generales, observaciones o enlaces de interés sobre el expediente..."
           />
+        </div>
+
+        {/* ESTADO GLOBAL DEL EXPEDIENTE */}
+        <div>
+          <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">
+            Estado del Expediente *
+          </label>
+          <select
+            value={projectStatus}
+            onChange={(e) => setProjectStatus(e.target.value as 'active' | 'completed' | 'archived')}
+            className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-semibold text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+          >
+            <option value="active">🟢 Activo</option>
+            <option value="completed">✅ Completado</option>
+            <option value="archived">📦 Archivado</option>
+          </select>
         </div>
 
         {/* SELECTOR DE CONCEJALÍA */}

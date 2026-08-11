@@ -14,7 +14,7 @@ export default function TaskDetailPanel({ tarea, onClose }: Props) {
   const concejaliasList = useConcejalias(tarea.userId);
   const panelRef = useRef<HTMLDivElement>(null);
   const [titulo, setTitulo] = useState(tarea.titulo);
-  const [notas, setNotas] = useState(tarea.notas || '');
+  const [notas, setNotas] = useState(tarea.notas || tarea.notes || '');
 
   const getInitialStatus = (t: Tarea): TaskStatus => {
     if (t.status) return t.status;
@@ -64,7 +64,7 @@ export default function TaskDetailPanel({ tarea, onClose }: Props) {
       if (docSnap.exists()) {
         const liveData = { id: docSnap.id, ...docSnap.data() } as Tarea;
         setTitulo(liveData.titulo);
-        setNotas(liveData.notas || '');
+        setNotas(liveData.notas || liveData.notes || '');
         setStatus(getInitialStatus(liveData));
         setTiempoEstimado(getInitialMinutes(liveData));
         setIsInMyDay(liveData.isInMyDay ?? true);
@@ -120,6 +120,7 @@ export default function TaskDetailPanel({ tarea, onClose }: Props) {
       await updateDoc(taskRef, {
         titulo,
         notas,
+        notes: notas,
         status,
         estimatedTimeMin: finalMinutes,
         dueDate: calculatedDueDate,

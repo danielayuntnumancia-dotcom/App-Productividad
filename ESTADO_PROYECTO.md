@@ -1,62 +1,48 @@
 # Estado del Proyecto - App de Productividad y Gestión Municipal por Expedientes
 
-**Última actualización:** 9 de Agosto de 2026  
+**Última actualización:** 11 de Agosto de 2026  
 **Estado:** ✅ Estable, Compilado y Desplegado en Producción  
 **Entorno de Producción:** [https://app-productividad-54955.web.app](https://app-productividad-54955.web.app)  
 
 ---
 
-## 🚀 Logros de esta Sesión
+## 🚀 Logros Recientes
 
-1. **Garantía y Resolución Definitiva de Permisos en Firestore:**
-   - Diagnóstico del error `Missing or insufficient permissions.` causado por escrituras en colecciones restringidas por las reglas de seguridad del servidor.
-   - Solución arquitectónica sólida: Almacenamiento de **Concejalías Personalizadas** (`isConcejalia: true`) y **Plantillas Recurrentes** (`isTemplate: true`) dentro de la colección autorizada `/tareas`.
-   - Escritura atómica en lote (*writeBatch*) 100% autorizada sin depender de cambios en reglas de servidor ni planes de pago GCP.
+1. **Módulo y Organización Visual por Subcarpetas de Contratos Menores:**
+   - **Subcarpeta Máster en Concejalía:** Agrupación visual `📜 Subcarpeta: Contratos Menores` en *ExpedientesView* para no mezclar los contratos con los expedientes ordinarios de la concejalía.
+   - **Tarjeta Máster en Mi Día:** Bloque desplegable `📜 Contratos Menores en Mi Día` en *MiDiaView* para consultar y marcar tareas al instante.
+   - **Sección propia en la Barra Lateral (`ContratosMenoresView.tsx`):** Módulo dedicado accesible en 1 clic con botón `⚡ Nuevo Contrato Menor`, barra de progreso (*ej. 2/4 completadas - 50%*) y filtros.
 
-2. **Refactorización Semántica a Concejalías Municipal:**
-   - Reemplazo completo de la antigua etiqueta `masterCategory` por la propiedad municipal oficial **Concejalía**.
-   - Integración de concejalías fijas y dinámicas: *Economía y Hacienda*, *Medio Ambiente*, *Policía Local y Movilidad*, *Entidades Urbanísticas de Conservación*.
+2. **Filtros Avanzados, Buscador y Estados en Expedientes (`ExpedientesView.tsx`):**
+   - Buscador interactivo por código (`EXP-2026-XXXX`), por nombre del expediente, concejalía o tareas y anotaciones asociadas.
+   - Selector desplegable por Concejalía Responsable y por Estado del Expediente (*🟢 Activos*, *✅ Completados*, *📦 Archivados*).
 
-3. **Constructor Dinámico de Expedientes (`ExpedienteBuilderModal.tsx`):**
-   - Formulario interactivo respaldado en tiempo real por Firestore.
-   - Selector dinámico con opción `"+ Crear nueva Concejalía"` para guardar y seleccionar nuevas concejalías al instante.
-   - Creador de tareas por filas sobre la marcha con configuración de títulos, minutos estimados, estado (*Pendiente*, *En curso*, *Retenido*) y entidad retenedora.
-   - Checkbox *"Guardar como plantilla recurrente"* para almacenar esquemas reutilizables en Firestore.
+3. **Garantía y Preservación de Anotaciones / Notas:**
+   - Eliminada la sobreescritura de notas en tareas hijas al actualizar en lote y sincronización simultánea de campos `notas` y `notes`.
 
-4. **Sistema de Códigos Legibles de Expediente (`expedientCode`):**
-   - Autogeneración de códigos únicos con formato **`EXP-2026-XXXX`** (ej. `EXP-2026-A4F9`) asociados a cada expediente y sus tareas hijas.
+3. **Garantía y Resolución Definitiva de Permisos en Firestore:**
+   - Almacenamiento de **Concejalías Personalizadas** (`isConcejalia: true`) y **Plantillas Recurrentes** (`isTemplate: true`) dentro de la colección autorizada `/tareas`.
+   - Escritura atómica en lote (*writeBatch*) 100% autorizada.
 
-5. **Sistema de Vinculación Cruzada entre Expedientes (`linkedExpedientId`):**
-   - Selector opcional *"Vincular a Expediente Existente"* en el Constructor.
-   - Indicador visual `"🔗 Vinculado a: [Código - Nombre del expediente padre]"` en la vista de Expedientes.
+4. **Constructor Dinámico de Expedientes (`ExpedienteBuilderModal.tsx`):**
+   - Formulario interactivo en tiempo real con selector dinámico de concejalías y vinculación entre expedientes.
+
+5. **Sistema de Códigos Legibles de Expediente (`expedientCode`):**
+   - Autogeneración de códigos únicos con formato **`EXP-2026-XXXX`**.
 
 6. **Identificación Visual por Colores por Concejalía (`concejaliaColors.ts`):**
-   - Asignación de paleta cromática exclusiva e inmutable:
-     - 🟦 **Economía y Hacienda:** Azul Índigo
-     - 🟩 **Medio Ambiente:** Esmeralda / Verde
-     - 🟧 **Policía Local y Movilidad:** Ámbar / Naranja
-     - 🟪 **Entidades Urbanísticas de Conservación:** Púrpura
-     - 🎨 **Concejalías Nuevas:** Hash determinista que otorga colores únicos (Rosa, Cyan, Fuchsia, Teal).
-   - Aplicación transversal en insignias (*badge pills*) de tareas en **Mi Día**, **Bandeja**, **Expedientes** y **Selector de Plantillas**.
-
-7. **Estructura por Expedientes en "Mi Día" (`MiDiaView.tsx`):**
-   - Organización en dos bloques: **Expedientes en Mi Día** (tarjetas de acordeón desplegables con su badge `expedientCode`, contador de tareas e insignia de concejalía) y **Tareas Independientes**.
-
-8. **Acciones Rápidas de Eliminación Directa:**
-   - Papelera directa en cada tarea individual para eliminar de Firestore (`deleteDoc`) sin abrir paneles laterales.
-   - Papelera directa en la cabecera de cada expediente para eliminar atómicamente (`writeBatch`) el expediente completo y todas sus tareas hijas.
+   - Paleta cromática exclusiva para concejalías fijas y dinámicas en todas las vistas.
 
 ---
 
 ## 📌 Tareas Pendientes para la Próxima Sesión
 
-1. **Filtros Avanzados y Buscador en Expedientes:**
-   - Permitir filtrar la vista de expedientes por concejalía específica o por estado del proyecto (*Activo*, *Completado*, *Archivado*).
-2. **Exportación de Informes de Expediente:**
+1. **Exportación de Informes de Expediente:**
    - Botón para exportar el resumen de tareas de un expediente determinado en formato PDF o Excel.
-3. **Notificaciones y Recordatorios Automáticos:**
+2. **Notificaciones y Recordatorios Automáticos:**
    - Configuración de alertas emergentes cuando un expediente o tarea vinculada a terceros supere su fecha límite.
 
 ---
 
-*Repositorio e infraestructura sincronizados correctamente.*
+*Despliegue en producción completado con éxito en Firebase Hosting.*
+
