@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebaseConfig';
-import { collection, query, where, onSnapshot, doc, updateDoc, deleteDoc, addDoc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { Tarea } from '../types';
 import { User } from 'firebase/auth';
 import TaskCreateModal from './TaskCreateModal';
@@ -13,11 +13,13 @@ interface Props {
   onSelectTask: (tarea: Tarea | null) => void;
 }
 
+type StatusFilterOption = 'todas' | 'todo' | 'in_progress' | 'waiting_on_third_party' | 'completed';
+
 export default function RegistroView({ user, searchQuery = '', onSelectTask }: Props) {
   const [tareas, setTareas] = useState<Tarea[]>([]);
   const [isCreatingTask, setIsCreatingTask] = useState(false);
   const [isCreatingExpediente, setIsCreatingExpediente] = useState(false);
-  const [filter, setFilter] = useState<'pendientes' | 'completadas' | 'todas'>('pendientes');
+  const [filter, setFilter] = useState<StatusFilterOption>('todas');
 
   useEffect(() => {
     const q = query(
@@ -52,26 +54,22 @@ export default function RegistroView({ user, searchQuery = '', onSelectTask }: P
         return 9999;
       };
 
-      // Ordenar por: 1º Fecha Límite (la más próxima primero), 2º Concejalía, 3º Expediente, 4º Nombre (orden natural)
+      // Ordenar por: 1º Fecha Límite, 2º Concejalía, 3º Expediente, 4º Nombre
       tareasData.sort((a, b) => {
-        // 1. Fecha Límite (la más próxima primero)
         const dateA = getTaskDueDate(a);
         const dateB = getTaskDueDate(b);
         if (dateA !== dateB) return dateA - dateB;
 
-        // 2. Concejalía (alfabético)
         const concA = a.concejalia || a.projectConcejalia || a.projectMasterCategory || 'ZZZ_SinConcejalia';
         const concB = b.concejalia || b.projectConcejalia || b.projectMasterCategory || 'ZZZ_SinConcejalia';
         const concComp = concA.localeCompare(concB, undefined, { sensitivity: 'base' });
         if (concComp !== 0) return concComp;
 
-        // 3. Expediente / Proyecto (alfabético)
         const projA = a.projectName || 'ZZZ_SinExpediente';
         const projB = b.projectName || 'ZZZ_SinExpediente';
         const projComp = projA.localeCompare(projB, undefined, { sensitivity: 'base' });
         if (projComp !== 0) return projComp;
 
-        // 4. Nombre / Título (orden natural)
         const orderA = getTaskSortOrder(a);
         const orderB = getTaskSortOrder(b);
         if (orderA !== orderB) return orderA - orderB;
@@ -110,11 +108,28 @@ export default function RegistroView({ user, searchQuery = '', onSelectTask }: P
     }
   };
 
+  // Contadores para las pestañas de filtro por estado
+  const counts = {
+    todas: tareas.length,
+    todo: tareas.filter(t => !t.completada && (t.status === 'todo' || !t.status)).length,
+    in_progress: tareas.filter(t => !t.completada && t.status === 'in_progress').length,
+    waiting_on_third_party: tareas.filter(t => !t.completada && t.status === 'waiting_on_third_party').length,
+    completed: tareas.filter(t => t.completada || t.status === 'completed').length,
+  };
+
   const filteredTareas = tareas.filter(t => {
     let matchFilter = true;
     const isCompleted = t.status === 'completed' || !!t.completada;
-    if (filter === 'pendientes') matchFilter = !isCompleted;
-    else if (filter === 'completadas') matchFilter = isCompleted;
+
+    if (filter === 'todo') {
+      matchFilter = !isCompleted && (t.status === 'todo' || !t.status);
+    } else if (filter === 'in_progress') {
+      matchFilter = !isCompleted && t.status === 'in_progress';
+    } else if (filter === 'waiting_on_third_party') {
+      matchFilter = !isCompleted && t.status === 'waiting_on_third_party';
+    } else if (filter === 'completed') {
+      matchFilter = isCompleted;
+    }
 
     if (!matchFilter) return false;
 
@@ -165,30 +180,46 @@ export default function RegistroView({ user, searchQuery = '', onSelectTask }: P
     }
   };
 
+  const filterOptions: { key: StatusFilterOption; label: string; count: number; activeClass: string }[] = [
+    { key: 'todas', label: 'Todas', count: counts.todas, activeClass: 'bg-white dark:bg-slate-600 text-slate-800 dark:text-slate-100 shadow-sm' },
+    { key: 'todo', label: 'Pendientes', count: counts.todo, activeClass: 'bg-slate-800 dark:bg-slate-200 text-white dark:text-slate-900 shadow-sm' },
+    { key: 'in_progress', label: 'En Curso', count: counts.in_progress, activeClass: 'bg-indigo-600 text-white shadow-sm' },
+    { key: 'waiting_on_third_party', label: '⚠️ Retenidas por Terceros', count: counts.waiting_on_third_party, activeClass: 'bg-amber-500 text-white shadow-sm' },
+    { key: 'completed', label: 'Completadas', count: counts.completed, activeClass: 'bg-emerald-600 text-white shadow-sm' }
+  ];
+
   return (
     <div className="p-4 sm:p-6 md:p-8 max-w-7xl mx-auto w-full flex flex-col gap-6 md:gap-8 animate-fade-in">
         
-        {/* HEADER */}
-        <section className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 animate-fade-in-up">
+        {/* HEADER & FILTER BAR */}
+        <section className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 animate-fade-in-up">
           <div>
             <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-100 transition-colors duration-300">Registro de Tareas</h2>
             <p className="text-sm text-slate-500 dark:text-slate-400 transition-colors duration-300 mt-1">
-              {tareas.length} tareas totales
+              Mostrando {filteredTareas.length} de {tareas.length} tareas totales
             </p>
           </div>
           
-          <div className="flex bg-slate-200/50 dark:bg-slate-700/50 p-1 rounded-xl transition-colors duration-300">
-            {(['pendientes', 'completadas', 'todas'] as const).map(f => (
+          {/* BARRA DE FILTROS AVANZADA POR ESTADO */}
+          <div className="flex flex-wrap items-center gap-1.5 bg-slate-200/60 dark:bg-slate-800/80 p-1.5 rounded-2xl border border-slate-300/50 dark:border-slate-700/50 w-full lg:w-auto overflow-x-auto">
+            {filterOptions.map(opt => (
               <button
-                key={f}
-                onClick={() => setFilter(f)}
-                className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
-                  filter === f 
-                    ? 'bg-white dark:bg-slate-600 text-slate-800 dark:text-slate-100 shadow-sm' 
-                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+                key={opt.key}
+                onClick={() => setFilter(opt.key)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                  filter === opt.key 
+                    ? opt.activeClass 
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-300/40 dark:hover:bg-slate-700/50'
                 }`}
               >
-                {f.charAt(0).toUpperCase() + f.slice(1)}
+                <span>{opt.label}</span>
+                <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${
+                  filter === opt.key 
+                    ? 'bg-black/15 dark:bg-white/20 text-current font-extrabold' 
+                    : 'bg-slate-300/60 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-semibold'
+                }`}>
+                  {opt.count}
+                </span>
               </button>
             ))}
           </div>
@@ -215,8 +246,9 @@ export default function RegistroView({ user, searchQuery = '', onSelectTask }: P
               {/* LIST OF TASKS */}
         <section className="space-y-3">
           {filteredTareas.length === 0 ? (
-            <div className="text-center py-12 bg-white dark:bg-slate-800 rounded-3xl border border-slate-100 dark:border-slate-700">
-              <p className="text-slate-500 dark:text-slate-400 font-medium">No hay tareas que coincidan con el filtro</p>
+            <div className="text-center py-12 bg-white dark:bg-slate-800 rounded-3xl border border-slate-100 dark:border-slate-700 transition-colors duration-300">
+              <svg className="w-16 h-16 mx-auto text-slate-300 dark:text-slate-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg>
+              <p className="text-slate-500 dark:text-slate-400 font-medium">No se encontraron tareas con el filtro seleccionado</p>
             </div>
           ) : (
             filteredTareas.map((tarea) => {

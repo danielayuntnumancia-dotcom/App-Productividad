@@ -15,6 +15,8 @@ interface Props {
   onSelectProject?: (project: Project) => void;
 }
 
+type ExpedienteStatusFilter = 'todos' | 'in_progress' | 'waiting_on_third_party' | 'completed';
+
 export default function ExpedientesView({ user, searchQuery = '', onSelectTask, onSelectProject }: Props) {
   const concejaliasList = useConcejalias(user.uid);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -22,6 +24,7 @@ export default function ExpedientesView({ user, searchQuery = '', onSelectTask, 
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
   const [isCreatingExpediente, setIsCreatingExpediente] = useState(false);
   const [isCreatingBuilder, setIsCreatingBuilder] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<ExpedienteStatusFilter>('todos');
 
   // Estados locales de filtrado y búsqueda avanzada
   const [localSearchQuery, setLocalSearchQuery] = useState(searchQuery);
@@ -182,20 +185,37 @@ export default function ExpedientesView({ user, searchQuery = '', onSelectTask, 
     }
   };
 
-  // Filtrar expedientes según los tres criterios combinados (Buscador, Concejalía, Estado)
+  // Filtrado de tareas según statusFilter
+  const filterTaskByStatus = (t: Tarea): boolean => {
+    if (statusFilter === 'todos') return true;
+    const isCompleted = t.status === 'completed' || !!t.completada;
+    if (statusFilter === 'in_progress') return !isCompleted && t.status === 'in_progress';
+    if (statusFilter === 'waiting_on_third_party') return !isCompleted && t.status === 'waiting_on_third_party';
+    if (statusFilter === 'completed') return isCompleted;
+    return true;
+  };
+
+  // Filtrar expedientes según los criterios combinados (Buscador, Concejalía, Estado de Expediente y Estado de Tareas)
   const filteredProjects = effectiveProjects.filter((proj) => {
     // 1. Filtro de concejalía
     if (selectedConcejalia !== 'ALL' && (proj.concejalia || 'General') !== selectedConcejalia) {
       return false;
     }
 
-    // 2. Filtro de estado
+    // 2. Filtro de estado de proyecto
     const effectiveStatus = getProjectEffectiveStatus(proj);
     if (selectedStatus !== 'ALL' && effectiveStatus !== selectedStatus) {
       return false;
     }
 
-    // 3. Filtro de búsqueda textual (Código EXP, Nombre de expediente, Concejalía, o tareas/notas asociadas)
+    // 3. Filtro por tareas según statusFilter
+    if (statusFilter !== 'todos') {
+      const projTasks = allTareas.filter(t => t.projectId === proj.id);
+      const hasMatchingTask = projTasks.some(filterTaskByStatus);
+      if (!hasMatchingTask) return false;
+    }
+
+    // 4. Filtro de búsqueda textual (Código EXP, Nombre de expediente, Concejalía, o tareas/notas asociadas)
     if (localSearchQuery.trim()) {
       const q = localSearchQuery.toLowerCase();
       const codeMatch = proj.expedientCode ? proj.expedientCode.toLowerCase().includes(q) : false;
@@ -214,12 +234,17 @@ export default function ExpedientesView({ user, searchQuery = '', onSelectTask, 
 
     return true;
   });
-
-  // Agrupar proyectos filtrados por Concejalía
   const concejaliaGroups: Record<string, Project[]> = {};
 
   filteredProjects.forEach((proj) => {
     const groupName = proj.concejalia || 'General';
+    // Si hay filtro de estado, verificar si el proyecto contiene tareas que coincidan
+    const projTasks = allTareas.filter(t => t.projectId === proj.id);
+    if (statusFilter !== 'todos') {
+      const hasMatchingTask = projTasks.some(filterTaskByStatus);
+      if (!hasMatchingTask && projTasks.length > 0) return;
+    }
+
     if (!concejaliaGroups[groupName]) concejaliaGroups[groupName] = [];
     concejaliaGroups[groupName].push(proj);
   });
@@ -254,11 +279,18 @@ export default function ExpedientesView({ user, searchQuery = '', onSelectTask, 
     setSelectedStatus('ALL');
   };
 
+  const filterPills: { key: ExpedienteStatusFilter; label: string; count: number }[] = [
+    { key: 'todos', label: 'Todos los Expedientes', count: effectiveProjects.length },
+    { key: 'in_progress', label: '⚡ En Curso', count: allTareas.filter(t => t.status === 'in_progress').length },
+    { key: 'waiting_on_third_party', label: '⚠️ Retenidos por Terceros', count: allTareas.filter(t => t.status === 'waiting_on_third_party').length },
+    { key: 'completed', label: '✅ Completados', count: allTareas.filter(t => t.status === 'completed' || t.completada).length },
+  ];
+
   return (
     <div className="p-4 sm:p-6 md:p-8 max-w-7xl mx-auto w-full space-y-6 animate-fade-in">
       
       {/* HEADER SECTION */}
-      <section className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <section className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-100">Árbol de Expedientes</h2>
           <p className="text-sm text-slate-500 dark:text-slate-400">Jerarquía completa por Concejalía, Expedientes y Tareas Hijas</p>
@@ -345,20 +377,49 @@ export default function ExpedientesView({ user, searchQuery = '', onSelectTask, 
 
         </div>
 
-        {/* RESUMEN DE RESULTADOS Y BOTÓN DE LIMPIAR FILTROS */}
-        <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-700/50 text-xs">
-          <span className="font-semibold text-slate-500 dark:text-slate-400">
-            Mostrando <strong className="text-indigo-600 dark:text-indigo-400 font-bold">{filteredProjects.length}</strong> de {effectiveProjects.length} expedientes
-          </span>
+        {/* BARRA DE FILTRO POR ESTADO DE TAREA */}
+        <div className="pt-2 border-t border-slate-100 dark:border-slate-700/50 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-1.5 bg-slate-100 dark:bg-slate-900/60 p-1.5 rounded-2xl border border-slate-200 dark:border-slate-700/50">
+            {filterPills.map(opt => (
+              <button
+                key={opt.key}
+                onClick={() => setStatusFilter(opt.key)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all duration-200 flex items-center gap-1.5 cursor-pointer ${
+                  statusFilter === opt.key 
+                    ? (opt.key === 'waiting_on_third_party' 
+                        ? 'bg-amber-500 text-white shadow-sm' 
+                        : opt.key === 'completed'
+                          ? 'bg-emerald-600 text-white shadow-sm'
+                          : opt.key === 'in_progress'
+                            ? 'bg-indigo-600 text-white shadow-sm'
+                            : 'bg-slate-800 dark:bg-slate-200 text-white dark:text-slate-900 shadow-sm')
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-200/50 dark:hover:bg-slate-800/50'
+                }`}
+              >
+                <span>{opt.label}</span>
+                <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${
+                  statusFilter === opt.key ? 'bg-black/15 dark:bg-white/20 text-current font-extrabold' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-semibold'
+                }`}>
+                  {opt.count}
+                </span>
+              </button>
+            ))}
+          </div>
 
-          {isFilteringActive && (
-            <button
-              onClick={resetFilters}
-              className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 flex items-center gap-1 cursor-pointer transition-colors"
-            >
-              <span>✕ Limpiar Filtros</span>
-            </button>
-          )}
+          <div className="flex items-center gap-3 text-xs">
+            <span className="font-semibold text-slate-500 dark:text-slate-400">
+              Mostrando <strong className="text-indigo-600 dark:text-indigo-400 font-bold">{filteredProjects.length}</strong> de {effectiveProjects.length} expedientes
+            </span>
+
+            {isFilteringActive && (
+              <button
+                onClick={resetFilters}
+                className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 flex items-center gap-1 cursor-pointer transition-colors"
+              >
+                <span>✕ Limpiar Filtros</span>
+              </button>
+            )}
+          </div>
         </div>
       </section>
 
@@ -410,7 +471,6 @@ export default function ExpedientesView({ user, searchQuery = '', onSelectTask, 
                 return titleA.localeCompare(titleB, undefined, { numeric: true, sensitivity: 'base' });
               });
             };
-
             const renderProjectCard = (project: Project) => {
               const isExpanded = expandedProjects.has(project.id!);
               const projectTasks = sortTasksNaturally(allTareas.filter(t => t.projectId === project.id));
@@ -633,23 +693,26 @@ export default function ExpedientesView({ user, searchQuery = '', onSelectTask, 
                   {/* EXPEDIENTES ORDINARIOS DE LA CONCEJALÍA */}
                   {regularProjectsInGroup.map((project) => renderProjectCard(project))}
                 </div>
-
               </div>
             );
           })}
         </div>
       )}
 
-      {/* MODAL DE NUEVO EXPEDIENTE */}
-      {isCreatingExpediente && (
-        <TemplateSelectorModal user={user} onClose={() => setIsCreatingExpediente(false)} />
-      )}
-
-      {/* MODAL CONSTRUCTOR DINÁMICO */}
+      {/* MODALES DE CREACIÓN */}
       {isCreatingBuilder && (
-        <ExpedienteBuilderModal user={user} onClose={() => setIsCreatingBuilder(false)} />
+        <ExpedienteBuilderModal 
+          user={user}
+          onClose={() => setIsCreatingBuilder(false)}
+        />
       )}
 
+      {isCreatingExpediente && (
+        <TemplateSelectorModal
+          user={user}
+          onClose={() => setIsCreatingExpediente(false)}
+        />
+      )}
     </div>
   );
 }

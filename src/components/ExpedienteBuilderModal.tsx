@@ -194,7 +194,7 @@ export default function ExpedienteBuilderModal({ user, onClose }: Props) {
       // ACCIÓN C (Condicional): Si el checkbox es TRUE, guardar como plantilla en la colección 'tareas' con isTemplate: true
       if (saveAsTemplate) {
         const templateRef = doc(collection(db, 'tareas'));
-        const matchedConcObj = concejalias.find(c => c.name === selectedConcejaliaName);
+        const matchedConcObj = concejaliasList.find(c => c.name === selectedConcejaliaName);
         batch.set(templateRef, {
           isTemplate: true,
           name: projName,

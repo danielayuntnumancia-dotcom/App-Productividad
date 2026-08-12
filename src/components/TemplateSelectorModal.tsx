@@ -279,7 +279,7 @@ export default function TemplateSelectorModal({ user, onClose }: Props) {
                 const categoryTemplates = allTemplates.filter(
                   t => (t.concejalia || t.masterCategory || 'General') === category
                 );
-                const cStyle = getConcejaliaStyle(category);
+                const cStyle = getConcejaliaStyle(String(category));
 
                 return (
                   <div key={category} className="space-y-2">
