@@ -5,6 +5,7 @@ import { Project, Tarea, TaskStatus } from '../types';
 import CustomDatePicker from './CustomDatePicker';
 import { useConcejalias } from '../hooks/useConcejalias';
 import { getConcejaliaStyle } from '../utils/concejaliaColors';
+import { exportExpedientToPDF, exportExpedientToCSV, sortExpedientTasksNaturally, copyExpedientTasksToClipboard } from '../utils/exportUtils';
 
 interface Props {
   project: Project;
@@ -50,6 +51,8 @@ export default function ExpedienteDetailPanel({ project, onClose }: Props) {
 
   // Escuchar otros proyectos existentes para el selector de vinculación
   useEffect(() => {
+    if (!project?.userId) return;
+
     const q = query(
       collection(db, 'tareas'),
       where('userId', '==', project.userId)
@@ -79,17 +82,15 @@ export default function ExpedienteDetailPanel({ project, onClose }: Props) {
     });
 
     return () => unsub();
-  }, [project.userId, project.id]);
+  }, [project?.userId, project?.id]);
 
   // Escuchar en tiempo real las tareas del expediente
   useEffect(() => {
-    if (!project.id) return;
+    if (!project?.id) return;
 
-    const q = query(
-      collection(db, 'tareas'),
-      where('userId', '==', project.userId),
-      where('projectId', '==', project.id)
-    );
+    const q = project.userId
+      ? query(collection(db, 'tareas'), where('userId', '==', project.userId), where('projectId', '==', project.id))
+      : query(collection(db, 'tareas'), where('projectId', '==', project.id));
 
     const unsub = onSnapshot(q, (snapshot) => {
       const taskList: Tarea[] = [];
@@ -107,7 +108,7 @@ export default function ExpedienteDetailPanel({ project, onClose }: Props) {
     });
 
     return () => unsub();
-  }, [project.id, project.userId]);
+  }, [project?.id, project?.userId]);
 
   // Escuchar la tecla Escape para cerrar
   useEffect(() => {
@@ -141,15 +142,20 @@ export default function ExpedienteDetailPanel({ project, onClose }: Props) {
       const parsedMin = parseInt(newTaskMinutes, 10);
       const minVal = !isNaN(parsedMin) && parsedMin > 0 ? parsedMin : 15;
 
+      const rawTitle = newTaskTitle.trim();
+      const hasNumberPrefix = /^\d+[\.\s]/.test(rawTitle);
+      const nextSeqNumber = tasks.length + 1;
+      const formattedTitle = hasNumberPrefix ? rawTitle : `${nextSeqNumber}. ${rawTitle}`;
+
       await addDoc(collection(db, 'tareas'), {
         projectId: project.id,
         projectName: projectName.trim() || project.name,
         concejalia: concejalia || project.concejalia || 'General',
         projectConcejalia: concejalia || project.concejalia || 'General',
         linkedExpedientId: linkedExpedientId || '',
-        orderIndex: tasks.length + 1,
-        title: newTaskTitle.trim(),
-        titulo: `${newTaskTitle.trim()} - ${projectName.trim() || project.name}`,
+        orderIndex: nextSeqNumber,
+        title: formattedTitle,
+        titulo: `${formattedTitle} - ${projectName.trim() || project.name}`,
         notes: '',
         notas: '',
         status: 'todo',
@@ -272,40 +278,83 @@ export default function ExpedienteDetailPanel({ project, onClose }: Props) {
     }
   };
 
+  const handleCopyTextList = async () => {
+    const ok = await copyExpedientTasksToClipboard(project, tasks);
+    if (ok) {
+      setSuccessMsg("¡Lista de tareas copiada al portapapeles (lista para WhatsApp/Email)!");
+      setTimeout(() => setSuccessMsg(null), 3000);
+    } else {
+      setErrorMsg("No se pudo copiar al portapapeles.");
+      setTimeout(() => setErrorMsg(null), 3000);
+    }
+  };
+
   const cStyle = getConcejaliaStyle(concejalia);
 
   return (
     <div ref={panelRef} className="h-full flex flex-col bg-white dark:bg-slate-800 transition-colors duration-300 overflow-hidden shadow-2xl border-l border-slate-200 dark:border-slate-700">
       
       {/* HEADER DEL PANEL */}
-      <div className="p-6 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between shrink-0 bg-slate-50/50 dark:bg-slate-800/50">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="w-10 h-10 rounded-2xl bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-            </svg>
-          </div>
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100 truncate">
-                Detalles del Expediente
-              </h2>
-              {project.expedientCode && (
-                <span className="px-2 py-0.5 rounded-md text-xs font-mono font-bold bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
-                  {project.expedientCode}
-                </span>
-              )}
+      <div className="p-5 border-b border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 space-y-3 shrink-0">
+        {/* Fila 1: Título completo y botón cerrar */}
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-9 h-9 rounded-2xl bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+              </svg>
             </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400">Edición en lote de expediente y tareas hijas</p>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-base font-extrabold text-slate-800 dark:text-slate-100">
+                  Detalles del Expediente
+                </h2>
+                {project.expedientCode && (
+                  <span className="px-2 py-0.5 rounded-md text-xs font-mono font-bold bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                    {project.expedientCode}
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">Edición en lote de expediente y tareas hijas</p>
+            </div>
           </div>
+
+          <button 
+            onClick={onClose}
+            className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 dark:bg-slate-700 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors shrink-0 cursor-pointer"
+            title="Cerrar panel"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
         </div>
 
-        <button 
-          onClick={onClose}
-          className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 dark:bg-slate-700 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
-        </button>
+        {/* Fila 2: Barra de herramientas de exportación sin solapamiento */}
+        <div className="flex items-center gap-2 pt-1 border-t border-slate-200/50 dark:border-slate-700/50 flex-wrap">
+          <button
+            type="button"
+            onClick={() => exportExpedientToPDF(project, tasks)}
+            className="px-2.5 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100 font-bold text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+            title="Exportar informe en formato PDF listo para imprimir"
+          >
+            <span>📄 PDF</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => exportExpedientToCSV(project, tasks)}
+            className="px-2.5 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 font-bold text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+            title="Exportar hoja de datos compatible con Microsoft Excel"
+          >
+            <span>📊 Excel</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleCopyTextList}
+            className="px-2.5 py-1.5 rounded-xl bg-amber-50 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 hover:bg-amber-100 font-bold text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+            title="Copiar lista de tareas formateada para enviar por WhatsApp o Email"
+          >
+            <span>📋 Copiar Texto</span>
+          </button>
+        </div>
       </div>
 
       {/* MENSAJE DE ÉXITO */}
@@ -482,7 +531,7 @@ export default function ExpedienteDetailPanel({ project, onClose }: Props) {
 
           {/* LISTA DE TAREAS PENDIENTES EDITABLES */}
           <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-            {tasks.map((t, idx) => {
+            {sortExpedientTasksNaturally(tasks).map((t, idx) => {
               const currentTitle = editedTitles[t.id] !== undefined ? editedTitles[t.id] : (t.title || t.titulo);
               const currentMin = editedMinutes[t.id] !== undefined ? editedMinutes[t.id] : (t.estimatedTimeMin || 15);
               const currentStatus = editedStatuses[t.id] !== undefined ? editedStatuses[t.id] : (t.status || 'todo');

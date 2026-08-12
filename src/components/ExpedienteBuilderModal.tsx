@@ -162,6 +162,10 @@ export default function ExpedienteBuilderModal({ user, onClose }: Props) {
       const tareasRef = collection(db, 'tareas');
 
       validTasks.forEach((task, index) => {
+        const rawTitle = task.title.trim();
+        const hasNumber = /^\d+[\.\s]/.test(rawTitle);
+        const formattedTitle = hasNumber ? rawTitle : `${index + 1}. ${rawTitle}`;
+
         const newTaskRef = doc(tareasRef);
         batch.set(newTaskRef, {
           projectId: generatedProjectId,
@@ -172,8 +176,8 @@ export default function ExpedienteBuilderModal({ user, onClose }: Props) {
           expedientCode: expCode,
           linkedExpedientId: selectedLinkedProjectId || '',
           orderIndex: index + 1,
-          title: task.title.trim(),
-          titulo: `${task.title.trim()} - ${projName}`,
+          title: formattedTitle,
+          titulo: `${formattedTitle} - ${projName}`,
           notes: task.notes || notasProyecto.trim() || '',
           notas: task.notes || notasProyecto.trim() || '',
           status: task.status,

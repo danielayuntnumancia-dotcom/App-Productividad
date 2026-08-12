@@ -1,6 +1,8 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithCredential, signOut } from 'firebase/auth';
 import { getFirestore, enableIndexedDbPersistence } from 'firebase/firestore';
+import { Capacitor } from '@capacitor/core';
+import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
@@ -25,16 +27,25 @@ export const db = getFirestore(app, "ai-studio-focusflow-1fca40e6-32c0-45ea-8748
 
 // Enable offline persistence
 enableIndexedDbPersistence(db).catch((err) => {
-  if (err.code == 'failed-precondition') {
-    console.warn('Multiple tabs open, persistence can only be enabled in one tab at a a time.');
-  } else if (err.code == 'unimplemented') {
+  if (err.code === 'failed-precondition') {
+    console.warn('Multiple tabs open, persistence can only be enabled in one tab at a time.');
+  } else if (err.code === 'unimplemented') {
     console.warn('The current browser does not support all of the features required to enable persistence');
   }
 });
 
-// Auth helper functions
+// Auth helper functions con soporte nativo para Capacitor / Android
 export const signInWithGoogle = async () => {
   try {
+    if (Capacitor.isNativePlatform()) {
+      const res = await FirebaseAuthentication.signInWithGoogle();
+      const idToken = res.credential?.idToken;
+      if (idToken) {
+        const credential = GoogleAuthProvider.credential(idToken);
+        const userCredential = await signInWithCredential(auth, credential);
+        return userCredential.user;
+      }
+    }
     const result = await signInWithPopup(auth, googleProvider);
     return result.user;
   } catch (error) {
@@ -45,6 +56,9 @@ export const signInWithGoogle = async () => {
 
 export const logOut = async () => {
   try {
+    if (Capacitor.isNativePlatform()) {
+      await FirebaseAuthentication.signOut();
+    }
     await signOut(auth);
   } catch (error) {
     console.error("Error signing out", error);

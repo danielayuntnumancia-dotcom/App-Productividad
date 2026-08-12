@@ -175,8 +175,9 @@ export default function App() {
           if (selectedTask || selectedProject) {
             const target = e.target as HTMLElement;
             const isTaskCard = target.closest('[data-task-card="true"]');
+            const isProjectCard = target.closest('[data-project-card="true"]');
             const isInteractive = target.closest('button, input, select, textarea, a');
-            if (!isTaskCard && !isInteractive) {
+            if (!isTaskCard && !isProjectCard && !isInteractive) {
               setSelectedTask(null);
               setSelectedProject(null);
             }

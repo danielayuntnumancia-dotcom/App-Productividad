@@ -7,6 +7,7 @@ import TemplateSelectorModal from './TemplateSelectorModal';
 import ExpedienteBuilderModal from './ExpedienteBuilderModal';
 import { getConcejaliaStyle } from '../utils/concejaliaColors';
 import { useConcejalias } from '../hooks/useConcejalias';
+import { exportExpedientToPDF, exportExpedientToCSV, exportConcejaliaReportToPDF, exportConcejaliaReportToCSV, copyExpedientTasksToClipboard } from '../utils/exportUtils';
 
 interface Props {
   user: User;
@@ -406,10 +407,28 @@ export default function ExpedientesView({ user, searchQuery = '', onSelectTask, 
             ))}
           </div>
 
-          <div className="flex items-center gap-3 text-xs">
+          <div className="flex flex-wrap items-center gap-3 text-xs">
             <span className="font-semibold text-slate-500 dark:text-slate-400">
               Mostrando <strong className="text-indigo-600 dark:text-indigo-400 font-bold">{filteredProjects.length}</strong> de {effectiveProjects.length} expedientes
             </span>
+
+            {/* BOTONES DE EXPORTAR CONCEJALÍA O VISTA GENERAL */}
+            <div className="flex items-center gap-1.5 ml-auto sm:ml-0">
+              <button
+                onClick={() => exportConcejaliaReportToPDF(selectedConcejalia, filteredProjects, allTareas)}
+                className="px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100 font-semibold text-[11px] transition-colors flex items-center gap-1 cursor-pointer"
+                title="Exportar informe PDF oficial de los expedientes mostrados"
+              >
+                <span>📄 Informe PDF</span>
+              </button>
+              <button
+                onClick={() => exportConcejaliaReportToCSV(selectedConcejalia, filteredProjects, allTareas)}
+                className="px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 font-semibold text-[11px] transition-colors flex items-center gap-1 cursor-pointer"
+                title="Exportar hoja Excel CSV de los expedientes mostrados"
+              >
+                <span>📊 Excel</span>
+              </button>
+            </div>
 
             {isFilteringActive && (
               <button
@@ -482,83 +501,142 @@ export default function ExpedientesView({ user, searchQuery = '', onSelectTask, 
               return (
                 <div 
                   key={project.id}
+                  data-project-card="true"
                   className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-200"
                 >
-                  {/* CABECERA EXPEDIENTE */}
+                  {/* CABECERA EXPEDIENTE (Estructura en 2 Filas Anti-Solapamientos) */}
                   <div 
                     onClick={() => toggleProject(project.id!)}
-                    className="p-4 sm:p-5 flex items-center justify-between cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors"
+                    className="p-4 sm:p-5 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors space-y-3"
                   >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <button className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
-                        <svg 
-                          className={`w-4 h-4 transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`}
-                          fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                        >
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
-                        </svg>
-                      </button>
+                    {/* Fila 1: Título completo, código EXP y distintivo concejalía a 100% de ancho */}
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                        <button className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0 mt-0.5">
+                          <svg 
+                            className={`w-4 h-4 transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`}
+                            fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                          >
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                          </svg>
+                        </button>
 
-                      <div className="min-w-0 space-y-0.5">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <h3 className="font-semibold text-slate-800 dark:text-slate-100 truncate">
-                            {isContratoMenorProject(project) ? '📜' : '📁'} {project.name}
-                          </h3>
-                          {project.expedientCode && (
-                            <span className="px-2 py-0.5 rounded-md text-[11px] font-mono font-bold bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 shrink-0">
-                              {project.expedientCode}
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h3 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (onSelectProject) {
+                                  onSelectProject({
+                                    ...project,
+                                    userId: user.uid
+                                  });
+                                }
+                              }}
+                              className="font-extrabold text-slate-800 dark:text-slate-100 text-sm sm:text-base leading-snug break-words cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400"
+                            >
+                              {isContratoMenorProject(project) ? '📜' : '📁'} {project.name}
+                            </h3>
+                            {project.expedientCode && (
+                              <span className="px-2 py-0.5 rounded-md text-[11px] font-mono font-bold bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 shrink-0">
+                                {project.expedientCode}
+                              </span>
+                            )}
+                            {renderProjectStatusBadge(effStatus)}
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-2 text-xs">
+                            <span className="text-slate-500 dark:text-slate-400 font-medium">Concejalía:</span>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${projCStyle.badgeClass}`}>
+                              {project.concejalia}
                             </span>
-                          )}
-                          {renderProjectStatusBadge(effStatus)}
+                            {(() => {
+                              const linkedParent = project.linkedExpedientId 
+                                ? effectiveProjects.find(p => p.id === project.linkedExpedientId || p.expedientCode === project.linkedExpedientId) 
+                                : null;
+                              if (!linkedParent) return null;
+                              return (
+                                <span className="text-[11px] text-indigo-600 dark:text-indigo-400 font-medium flex items-center gap-1">
+                                  🔗 Vinculado a: {linkedParent.expedientCode ? `${linkedParent.expedientCode} - ` : ''}{linkedParent.name}
+                                </span>
+                              );
+                            })()}
+                          </div>
                         </div>
-                        <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5 flex-wrap">
-                          <span>Concejalía:</span>
-                          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-md border ${projCStyle.badgeClass}`}>
-                            {project.concejalia}
-                          </span>
-                        </p>
-                        {(() => {
-                          const linkedParent = project.linkedExpedientId 
-                            ? effectiveProjects.find(p => p.id === project.linkedExpedientId || p.expedientCode === project.linkedExpedientId) 
-                            : null;
-                          if (!linkedParent) return null;
-                          return (
-                            <p className="text-[11px] text-indigo-600 dark:text-indigo-400 font-medium flex items-center gap-1 mt-0.5">
-                              <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                              </svg>
-                              <span>Vinculado a: {linkedParent.expedientCode ? `${linkedParent.expedientCode} - ` : ''}{linkedParent.name}</span>
-                            </p>
-                          );
-                        })()}
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
+                    {/* Fila 2: Barra de herramientas de acciones y contador de tareas */}
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-slate-700/50">
+                      <span className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-700/80 text-slate-600 dark:text-slate-300 shrink-0">
                         {completedCount}/{totalCount} tareas
                       </span>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (onSelectProject) {
-                            onSelectProject(project);
-                          }
-                        }}
-                        className="w-7 h-7 flex items-center justify-center rounded-lg bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 transition-all shrink-0 cursor-pointer"
-                        title="Editar Expediente"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                        </svg>
-                      </button>
-                      <button
-                        onClick={(e) => handleDeleteExpedienteDirect(project.id!, project.name, e)}
-                        className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 transition-all shrink-0 cursor-pointer"
-                        title="Eliminar Expediente completo"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                      </button>
+
+                      <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            exportExpedientToPDF(project, projectTasks);
+                          }}
+                          className="px-2 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 font-bold text-[10px] cursor-pointer"
+                          title="Exportar informe PDF"
+                        >
+                          PDF
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            exportExpedientToCSV(project, projectTasks);
+                          }}
+                          className="px-2 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 font-bold text-[10px] cursor-pointer"
+                          title="Exportar Excel (CSV)"
+                        >
+                          XLS
+                        </button>
+                        <button
+                          type="button"
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            const ok = await copyExpedientTasksToClipboard(project, projectTasks);
+                            if (ok) {
+                              alert("¡Lista de tareas copiada al portapapeles (lista para WhatsApp/Email)!");
+                            }
+                          }}
+                          className="px-2 py-1 rounded-lg bg-amber-50 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 hover:bg-amber-100 font-bold text-[10px] cursor-pointer"
+                          title="Copiar lista para WhatsApp / Email"
+                        >
+                          TXT
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (onSelectProject) {
+                              onSelectProject({
+                                ...project,
+                                userId: user.uid
+                              });
+                            }
+                          }}
+                          className="w-7 h-7 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-700/60 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600 transition-all cursor-pointer"
+                          title="Editar Expediente"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                          </svg>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => handleDeleteExpedienteDirect(project.id!, project.name, e)}
+                          className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 transition-all cursor-pointer"
+                          title="Eliminar Expediente completo"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                        </button>
+                      </div>
                     </div>
                   </div>
 

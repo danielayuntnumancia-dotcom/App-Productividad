@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "261671365641",
+    "project_id": "app-productividad-54955",
+    "storage_bucket": "app-productividad-54955.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:261671365641:android:bddea2736c1c7f0a79dcd8",
+        "android_client_info": {
+          "package_name": "com.ayuntnumancia.appproductividad"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "261671365641-4g5blgklpgvlugsa5lcj62lpug6pv932.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA0VDPCUvt9drs69rUvcVGqWFyNEzUDSds"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "261671365641-4g5blgklpgvlugsa5lcj62lpug6pv932.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
