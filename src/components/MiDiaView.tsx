@@ -5,7 +5,7 @@ import { Tarea, Project } from '../types';
 import { User } from 'firebase/auth';
 import TaskCreateModal from './TaskCreateModal';
 import TemplateSelectorModal from './TemplateSelectorModal';
-import { getConcejaliaStyle } from '../utils/concejaliaColors';
+import { getConcejaliaStyle, getConcejaliaBg, getPriorityStyle, getPriorityBadgeClass } from '../utils/concejaliaColors';
 
 interface Props {
   user: User;
@@ -88,39 +88,19 @@ export default function MiDiaView({ user, searchQuery = '', onSelectTask, onSele
     }
   };
 
-  const handleStartTask = async (taskId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    try {
-      const taskRef = doc(db, 'tareas', taskId);
-      await updateDoc(taskRef, {
-        status: 'in_progress'
-      });
-    } catch (error) {
-      console.error("Error starting task: ", error);
-    }
-  };
-
-  // Convert estimated time to minutes (default 15 if empty or 0)
-  const getMinutes = (task: Tarea): number => {
-    if (typeof task.estimatedTimeMin === 'number' && !isNaN(task.estimatedTimeMin) && task.estimatedTimeMin > 0) {
-      return task.estimatedTimeMin;
-    }
-    if (task.tiempo_estimado) {
-      const isHours = task.tiempo_estimado.includes('h');
-      const val = parseInt(task.tiempo_estimado.replace(/\D/g, ''), 10);
-      if (!isNaN(val) && val > 0) return isHours ? val * 60 : val;
-    }
-    return 15; // Regla de negocio: 15 min por defecto si no está definido o es 0
-  };
-
-
-  const getPriorityStyle = (prioridad?: string) => {
-    switch(prioridad) {
-      case 'alta': return 'bg-red-50/80 border-red-100 dark:bg-red-900/10 dark:border-red-900/30 shadow-red-100 dark:shadow-none';
-      case 'media': return 'bg-amber-50/80 border-amber-100 dark:bg-amber-900/10 dark:border-amber-900/30 shadow-amber-100 dark:shadow-none';
-      case 'baja': return 'bg-emerald-50/80 border-emerald-100 dark:bg-emerald-900/10 dark:border-emerald-900/30 shadow-emerald-100 dark:shadow-none';
-      default: return 'bg-white dark:bg-slate-800 border-slate-100 dark:border-slate-700';
-    }
+  const getPriorityBadge = (prioridad?: string, priority?: string) => {
+    const val = (prioridad || priority || 'media').toLowerCase();
+    const badgeClass = getPriorityBadgeClass(prioridad, priority);
+    const label = (val === 'alta' || val === 'high' || val === 'urgente' || val === 'urgent') 
+      ? '🔴 Alta' 
+      : (val === 'baja' || val === 'low') 
+        ? '🟩 Baja' 
+        : '🟧 Media';
+    return (
+      <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-md border ${badgeClass} shrink-0`}>
+        {label}
+      </span>
+    );
   };
 
   const getStatusBadge = (status?: string, blockedBy?: string) => {
@@ -136,17 +116,6 @@ export default function MiDiaView({ user, searchQuery = '', onSelectTask, onSele
         );
       default:
         return null;
-    }
-  };
-
-  const getConcejaliaBg = (concejalia?: string) => {
-    switch(concejalia) {
-      case 'Medioambiente': return 'bg-emerald-500 text-white';
-      case 'Seguridad': return 'bg-blue-500 text-white';
-      case 'Transporte': return 'bg-purple-500 text-white';
-      case 'Hacienda': return 'bg-amber-500 text-white';
-      case 'Entidades privadas': return 'bg-slate-500 text-white';
-      default: return 'bg-slate-50 dark:bg-slate-800/50 border-r border-slate-100 dark:border-slate-700/50';
     }
   };
 
@@ -227,28 +196,13 @@ export default function MiDiaView({ user, searchQuery = '', onSelectTask, onSele
     return 9999;
   };
 
-  const getTaskDueDate = (t: Tarea): number => {
-    const date = t.dueDate || t.fecha_vencimiento;
-    return date ? date : 9999999999999;
-  };
-
   const sortTasksNaturally = (tasks: Tarea[]): Tarea[] => {
     return [...tasks].sort((a, b) => {
-      // 1. Ordenar por fecha de vencimiento (más antigua/cercana primero; las sin fecha al final)
-      const dateA = getTaskDueDate(a);
-      const dateB = getTaskDueDate(b);
-      if (dateA !== dateB) {
-        return dateA - dateB;
-      }
-
-      // 2. Ordenar por número de orden en el título (ej. "1. ...", "2. ...")
       const orderA = getTaskSortOrder(a);
       const orderB = getTaskSortOrder(b);
       if (orderA !== orderB) {
         return orderA - orderB;
       }
-
-      // 3. Ordenar alfabéticamente por título
       const titleA = a.titulo || a.title || '';
       const titleB = b.titulo || b.title || '';
       return titleA.localeCompare(titleB, undefined, { numeric: true, sensitivity: 'base' });
@@ -276,16 +230,19 @@ export default function MiDiaView({ user, searchQuery = '', onSelectTask, onSele
   const renderTaskCard = (tarea: Tarea) => {
     const rawDueDate = tarea.dueDate || tarea.fecha_vencimiento;
     const isOverdue = !!rawDueDate && rawDueDate < Date.now() && tarea.status !== 'completed' && !tarea.completada;
-    const isCompleted = tarea.completada || tarea.status === 'completed';
-    const cardStyle = isCompleted 
-      ? 'opacity-60 bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700/50' 
-      : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700/80';
+
+    const cardStyle = isOverdue 
+      ? 'bg-red-50 border-red-500 dark:bg-red-900/20 dark:border-red-500/80' 
+      : (tarea.status === 'in_progress'
+          ? 'bg-indigo-50/80 border-indigo-500 dark:bg-indigo-900/10 dark:border-indigo-500 shadow-indigo-100 dark:shadow-none'
+          : getPriorityStyle(tarea.prioridad, (tarea as any).priority));
 
     const statusBadge = getStatusBadge(tarea.status, tarea.blockedBy);
 
     return (
       <div 
         key={tarea.id} 
+        data-task-card="true"
         className={`rounded-2xl border shadow-sm flex items-stretch group hover:shadow-md transition-all duration-300 cursor-pointer overflow-hidden ${cardStyle}`}
         onClick={() => onSelectTask(tarea)}
       >
@@ -303,10 +260,11 @@ export default function MiDiaView({ user, searchQuery = '', onSelectTask, onSele
         </div>
         <div className="flex-1 min-w-0 p-3.5 sm:p-5 flex flex-col justify-between">
           <div className="space-y-1.5">
-            {/* Fila superior de Metadatos y Borrado (Status Badge + Expediente + Papelera) */}
+            {/* Fila superior de Metadatos y Borrado (Status Badge + Priority Badge + Expediente + Papelera) */}
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-1.5 flex-wrap min-w-0">
                 {statusBadge}
+                {getPriorityBadge(tarea.prioridad, (tarea as any).priority)}
                 {tarea.projectName && (
                   <span className="text-[10px] font-bold px-2 py-0.5 rounded-md border bg-slate-100 dark:bg-slate-700/70 text-slate-600 dark:text-slate-300 truncate max-w-[220px]">
                     📁 {tarea.expedientCode ? `${tarea.expedientCode} - ` : ''}{tarea.projectName}
@@ -323,30 +281,30 @@ export default function MiDiaView({ user, searchQuery = '', onSelectTask, onSele
               </button>
             </div>
 
-            {/* Título de la tarea: 100% de ancho disponible en 1 o 2 líneas completas */}
+            {/* Título de la tarea */}
             <h3 className="font-bold text-slate-800 dark:text-slate-100 text-sm sm:text-base leading-snug break-words line-clamp-2 transition-colors duration-300">
               {tarea.titulo}
             </h3>
+
+            {tarea.notas && (
+              <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed transition-colors duration-300">
+                {tarea.notas}
+              </p>
+            )}
           </div>
 
-          {(tarea.notas || tarea.notes) && (
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 line-clamp-2 leading-relaxed transition-colors duration-300">
-              {tarea.notas || tarea.notes}
-            </p>
-          )}
-
-          <div className="flex flex-wrap items-center gap-2 mt-2.5">
-            <span className="text-xs font-medium text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700/50 px-2 py-0.5 rounded-md flex items-center gap-1 transition-colors duration-300">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3 mt-3 pt-2 border-t border-slate-100 dark:border-slate-700/40">
+            <span className="text-xs font-medium text-slate-500 dark:text-slate-400 bg-white/50 dark:bg-slate-800/50 px-2 py-1 rounded-md flex items-center gap-1 transition-colors duration-300">
               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
               {tarea.tiempo_estimado}
             </span>
             {tarea.concejalia && (
-              <span className="text-xs font-medium text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700/50 px-2 py-0.5 rounded-md transition-colors duration-300">
+              <span className="text-xs font-medium text-slate-500 dark:text-slate-400 bg-white/50 dark:bg-slate-800/50 px-2 py-1 rounded-md transition-colors duration-300">
                 {tarea.concejalia}
               </span>
             )}
             {tarea.fecha_vencimiento && (
-              <span className={`text-xs font-medium bg-slate-100 dark:bg-slate-700/50 px-2 py-0.5 rounded-md flex items-center gap-1 transition-colors duration-300 ${
+              <span className={`text-xs font-medium bg-white/50 dark:bg-slate-800/50 px-2 py-1 rounded-md flex items-center gap-1 transition-colors duration-300 ${
                 tarea.fecha_vencimiento < Date.now() ? 'text-red-500 dark:text-red-400 font-semibold' : 'text-slate-500 dark:text-slate-400'
               }`}>
                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
@@ -380,13 +338,13 @@ export default function MiDiaView({ user, searchQuery = '', onSelectTask, onSele
               </p>
             </div>
 
-            {/* BARRA DE FILTRADO POR ESTADO EN MI DÍA (SCROLL HORIZONTAL LIMPIO EN MÓVIL) */}
-            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar flex-nowrap bg-slate-200/60 dark:bg-slate-800/80 p-1.5 rounded-2xl border border-slate-300/50 dark:border-slate-700/50 max-w-full">
+            {/* BARRA DE FILTRADO POR ESTADO EN MI DÍA */}
+            <div className="flex items-center gap-1.5 bg-slate-200/60 dark:bg-slate-800/80 p-1.5 rounded-2xl border border-slate-300/50 dark:border-slate-700/50 overflow-x-auto no-scrollbar flex-nowrap max-w-full">
               {statusFilterOptions.map(opt => (
                 <button
                   key={opt.key}
                   onClick={() => setFilterStatus(opt.key)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all duration-200 flex items-center gap-1.5 cursor-pointer shrink-0 ${
                     filterStatus === opt.key 
                       ? (opt.key === 'waiting_on_third_party' 
                           ? 'bg-amber-500 text-white shadow-sm' 
@@ -396,7 +354,7 @@ export default function MiDiaView({ user, searchQuery = '', onSelectTask, onSele
                       : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-300/40 dark:hover:bg-slate-700/50'
                   }`}
                 >
-                  <span>{opt.label}</span>
+                  <span className="whitespace-nowrap">{opt.label}</span>
                   <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${
                     filterStatus === opt.key ? 'bg-black/15 dark:bg-white/20 text-current font-extrabold' : 'bg-slate-300/60 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-semibold'
                   }`}>
@@ -443,202 +401,174 @@ export default function MiDiaView({ user, searchQuery = '', onSelectTask, onSele
           </button>
         </section>
 
-        {/* PLANIFICADOR (Expedientes Accordions + Independent Tasks) */}
-        <section className="flex flex-col gap-6 animate-fade-in-up" style={{ animationDelay: '200ms' }}>
+        {/* MAIN TASK LIST */}
+        <section className="flex-1 flex flex-col gap-6 animate-fade-in-up" style={{ animationDelay: '100ms' }}>
           {filteredTareas.length === 0 ? (
             <div className="flex-1 flex flex-col items-center justify-center py-16 bg-white dark:bg-slate-800 rounded-3xl border border-slate-100 dark:border-slate-700 transition-colors duration-300">
               <svg className="w-16 h-16 text-slate-300 dark:text-slate-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M5 13l4 4L19 7"></path></svg>
               <p className="text-slate-500 dark:text-slate-400 font-medium text-center">No hay tareas que coincidan con el filtro seleccionado</p>
             </div>
           ) : (
-            <>
-              {/* BLOQUE DE EXPEDIENTES EN MI DÍA */}
-              {expedientesList.length > 0 && (() => {
-                const isContratoMenorExpedient = (exp: typeof expedientesList[0]) => {
-                  const nameLower = exp.name.toLowerCase();
-                  if (nameLower.includes('contrato menor') || nameLower.includes('contrato m')) return true;
-                  return exp.tasks.some(t => (t as any).isContratoMenor || (t as any).templateId === 'contrato_menor');
-                };
+            <div className="space-y-6">
+              
+              {/* BLOQUE 1: EXPEDIENTES EN MI DÍA */}
+              {expedientesList.length > 0 && (
+                <div className="space-y-4">
+                  {(() => {
+                    const isContratoMenorExpedient = (exp: typeof expedientesList[0]) => {
+                      return exp.tasks.some(t => (t as any).isContratoMenor || (t as any).templateId === 'contrato_menor');
+                    };
 
-                const cmExpedientes = expedientesList.filter(isContratoMenorExpedient);
-                const regularExpedientes = expedientesList.filter(e => !isContratoMenorExpedient(e));
-                const isCMMasterExpanded = expandedExpedientes.has('master_cm_midia');
+                    const cmExpedientes = expedientesList.filter(isContratoMenorExpedient);
+                    const regularExpedientes = expedientesList.filter(e => !isContratoMenorExpedient(e));
+                    const isCMMasterExpanded = expandedExpedientes.has('master_cm_midia');
 
-                const renderExpedientItem = (exp: typeof expedientesList[0]) => {
-                  const isExpanded = expandedExpedientes.has(exp.id);
-                  const cStyle = getConcejaliaStyle(exp.concejalia);
+                    const renderExpedientItem = (exp: typeof expedientesList[0]) => {
+                      const isExpanded = expandedExpedientes.has(exp.id);
+                      const cStyle = getConcejaliaStyle(exp.concejalia);
+                      const hasHighPriority = exp.tasks.some(t => (t.prioridad || (t as any).priority) === 'alta' || (t.prioridad || (t as any).priority) === 'high');
 
-                  return (
-                    <div 
-                      key={exp.id}
-                      data-project-card="true"
-                      className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-200"
-                    >
-                      {/* CABECERA EXPEDIENTE */}
-                      <div 
-                        onClick={() => toggleExpediente(exp.id)}
-                        className="p-4 sm:p-5 flex flex-col gap-2.5 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="flex items-start gap-2.5 min-w-0 flex-1">
-                            <button className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0 mt-0.5">
-                              <svg 
-                                className={`w-4 h-4 transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`}
-                                fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                              >
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
-                              </svg>
-                            </button>
-
-                            <div className="min-w-0 flex-1 space-y-1">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <h4 
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    if (onSelectProject) {
-                                      onSelectProject({
-                                        id: exp.id,
-                                        name: exp.name,
-                                        concejalia: exp.concejalia || 'General',
-                                        type: 'custom',
-                                        status: 'active',
-                                        expedientCode: exp.code,
-                                        userId: user.uid
-                                      });
-                                    }
-                                  }}
-                                  className="font-extrabold text-slate-800 dark:text-slate-100 text-sm sm:text-base leading-snug break-words hover:text-indigo-600 dark:hover:text-indigo-400 cursor-pointer"
-                                >
-                                  {isContratoMenorExpedient(exp) ? '📜' : '📁'} {exp.name}
-                                </h4>
-                                {exp.code && (
-                                  <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 shrink-0">
-                                    {exp.code}
-                                  </span>
-                                )}
-                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${cStyle.badgeClass}`}>
-                                  {exp.concejalia}
-                                </span>
-                              </div>
-
-                              <div className="flex flex-wrap items-center gap-2 text-xs">
-                                <span className="text-slate-500 dark:text-slate-400 font-medium">
-                                  {exp.tasks.length} {exp.tasks.length === 1 ? 'tarea en Mi Día' : 'tareas en Mi Día'}
-                                </span>
-                                {(() => {
-                                  const linkedParent = exp.linkedExpedientId 
-                                    ? expedientesList.find(p => p.id === exp.linkedExpedientId || p.code === exp.linkedExpedientId) 
-                                    : null;
-                                  if (!linkedParent) return null;
-                                  return (
-                                    <span className="text-[11px] text-indigo-600 dark:text-indigo-400 font-medium flex items-center gap-1">
-                                      🔗 Vinculado a: {linkedParent.code ? `${linkedParent.code} - ` : ''}{linkedParent.name}
-                                    </span>
-                                  );
-                                })()}
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            {/* EDITAR EXPEDIENTE */}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (onSelectProject) {
-                                  onSelectProject({
-                                    id: exp.id,
-                                    name: exp.name,
-                                    concejalia: exp.concejalia || 'General',
-                                    type: 'custom',
-                                    status: 'active',
-                                    expedientCode: exp.code,
-                                    userId: user.uid
-                                  });
-                                }
-                              }}
-                              className="w-7 h-7 flex items-center justify-center rounded-lg bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 transition-all cursor-pointer"
-                              title="Editar Expediente"
-                            >
-                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                              </svg>
-                            </button>
-
-                            {/* BORRADO DIRECTO DEL EXPEDIENTE */}
-                            <button
-                              onClick={(e) => handleDeleteExpedienteDirect(exp.id, exp.name, e)}
-                              className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 transition-all cursor-pointer"
-                              title="Eliminar Expediente completo"
-                            >
-                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* TAREAS HIJAS DEL EXPEDIENTE */}
-                      {isExpanded && (
-                        <div className="p-4 bg-slate-50/50 dark:bg-slate-900/30 border-t border-slate-100 dark:border-slate-700/50 space-y-3">
-                          {exp.tasks.map(t => renderTaskCard(t))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                };
-
-                return (
-                  <div className="space-y-4">
-                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                      Expedientes en Mi Día ({expedientesList.length})
-                    </h3>
-
-                    <div className="space-y-3">
-                      {/* TARJETA MÁSTER DE CONTRATOS MENORES EN MI DÍA */}
-                      {cmExpedientes.length > 0 && (
-                        <div className="bg-indigo-50/70 dark:bg-indigo-950/30 border-2 border-indigo-200 dark:border-indigo-800/70 rounded-2xl overflow-hidden shadow-xs">
-                          <div
-                            onClick={() => toggleExpediente('master_cm_midia')}
-                            className="p-4 flex items-center justify-between cursor-pointer hover:bg-indigo-100/50 dark:hover:bg-indigo-900/40 transition-colors"
+                      return (
+                        <div 
+                          key={exp.id}
+                          data-project-card="true"
+                          className={`bg-white dark:bg-slate-800 border-t border-r border-b border-slate-200 dark:border-slate-700/80 border-l-4 ${cStyle.borderL} rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-200`}
+                        >
+                          {/* CABECERA EXPEDIENTE */}
+                          <div 
+                            onClick={() => toggleExpediente(exp.id)}
+                            className="p-4 sm:p-5 flex flex-col gap-2.5 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors"
                           >
-                            <div className="flex items-center gap-3">
-                              <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold text-base shadow-sm shrink-0">
-                                📜
-                              </div>
-                              <div>
-                                <h4 className="font-bold text-indigo-950 dark:text-indigo-100 text-sm sm:text-base">
-                                  Contratos Menores en Mi Día
-                                </h4>
-                                <p className="text-xs text-indigo-600 dark:text-indigo-400 font-semibold">
-                                  {cmExpedientes.length} {cmExpedientes.length === 1 ? 'contrato activo hoy' : 'contratos activos hoy'}
-                                </p>
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                                <button className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0 mt-0.5">
+                                  <svg 
+                                    className={`w-4 h-4 transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`}
+                                    fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                  >
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                                  </svg>
+                                </button>
+
+                                <div className="min-w-0 flex-1 space-y-1">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <h4 
+                                      className="font-extrabold text-slate-800 dark:text-slate-100 text-sm sm:text-base leading-snug break-words cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400"
+                                      onClick={(e) => {
+                                        if (onSelectProject) {
+                                          e.stopPropagation();
+                                          onSelectProject({ id: exp.id, name: exp.name, type: 'custom', concejalia: exp.concejalia, status: 'active', expedientCode: exp.code });
+                                        }
+                                      }}
+                                    >
+                                      📁 {exp.name}
+                                    </h4>
+
+                                    {exp.code && (
+                                      <span className="px-2 py-0.5 rounded-md text-[11px] font-mono font-bold bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 shrink-0">
+                                        {exp.code}
+                                      </span>
+                                    )}
+
+                                    {hasHighPriority && (
+                                      <span className="px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-red-100 dark:bg-red-900/60 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800 shrink-0">
+                                        🔴 Alta Prioridad
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                                    {exp.concejalia && (
+                                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${cStyle.badgeClass}`}>
+                                        📁 {exp.concejalia}
+                                      </span>
+                                    )}
+                                    {exp.linkedExpedientId && (
+                                      <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-md">
+                                        🔗 Vinculado
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
                               </div>
                             </div>
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-indigo-100 text-indigo-700 dark:bg-indigo-900/60 dark:text-indigo-300">
-                                {isCMMasterExpanded ? 'Ocultar' : `Desplegar (${cmExpedientes.length})`}
+
+                            {/* BARRA INFERIOR DE ACCIONES Y CONTADOR */}
+                            <div className="flex items-center justify-between border-t border-slate-100 dark:border-slate-700/60 pt-2.5 mt-1">
+                              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 px-2.5 py-1 rounded-full">
+                                {exp.tasks.length} {exp.tasks.length === 1 ? 'tarea' : 'tareas'}
                               </span>
-                              <svg className={`w-5 h-5 text-indigo-600 dark:text-indigo-400 transition-transform duration-200 ${isCMMasterExpanded ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
-                              </svg>
+
+                              <button
+                                onClick={(e) => handleDeleteExpedienteDirect(exp.id, exp.name, e)}
+                                className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 transition-all shrink-0 cursor-pointer"
+                                title="Eliminar expediente"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                              </button>
                             </div>
                           </div>
 
-                          {/* LISTA DE CONTRATOS MENORES */}
-                          {isCMMasterExpanded && (
-                            <div className="p-3 space-y-3 bg-white/60 dark:bg-slate-900/40 border-t border-indigo-100 dark:border-indigo-900/40">
-                              {cmExpedientes.map(exp => renderExpedientItem(exp))}
+                          {/* LISTA DE TAREAS HIJAS */}
+                          {isExpanded && (
+                            <div className="p-4 pt-2 border-t border-slate-100 dark:border-slate-700/80 bg-slate-50/50 dark:bg-slate-900/30 space-y-2.5">
+                              {exp.tasks.map(t => renderTaskCard(t))}
                             </div>
                           )}
                         </div>
-                      )}
+                      );
+                    };
 
-                      {/* EXPEDIENTES REGULARES */}
-                      {regularExpedientes.map(exp => renderExpedientItem(exp))}
-                    </div>
-                  </div>
-                );
-              })()}
+                    return (
+                      <div className="space-y-4">
+                        {/* EXPEDIENTES REGULARES */}
+                        {regularExpedientes.length > 0 && (
+                          <div className="space-y-3">
+                            {regularExpedientes.map(exp => renderExpedientItem(exp))}
+                          </div>
+                        )}
+
+                        {/* TARJETA MÁSTER CONTRATOS MENORES */}
+                        {cmExpedientes.length > 0 && (
+                          <div className="bg-amber-50/40 dark:bg-amber-950/20 border-2 border-amber-300 dark:border-amber-700/60 rounded-2xl overflow-hidden shadow-sm">
+                            <div 
+                              onClick={() => toggleExpediente('master_cm_midia')}
+                              className="p-4 sm:p-5 flex items-center justify-between cursor-pointer hover:bg-amber-100/50 dark:hover:bg-amber-900/30 transition-colors"
+                            >
+                              <div className="flex items-center gap-3 min-w-0">
+                                <button className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0">
+                                  <svg 
+                                    className={`w-4 h-4 transition-transform duration-200 ${isCMMasterExpanded ? 'rotate-90' : ''}`}
+                                    fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                                  >
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                                  </svg>
+                                </button>
+                                <div>
+                                  <h4 className="font-extrabold text-amber-900 dark:text-amber-200 text-base flex items-center gap-2">
+                                    <span>📜</span> Contratos Menores en Mi Día
+                                  </h4>
+                                  <p className="text-xs text-amber-700 dark:text-amber-400 font-medium">
+                                    {cmExpedientes.length} contrato(s) activo(s)
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+
+                            {isCMMasterExpanded && (
+                              <div className="p-4 pt-2 border-t border-amber-200 dark:border-amber-800/50 space-y-3">
+                                {cmExpedientes.map(exp => renderExpedientItem(exp))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
 
               {/* BLOQUE 2: TAREAS INDEPENDIENTES */}
               {sortedIndependentTasks.length > 0 && (
@@ -654,7 +584,7 @@ export default function MiDiaView({ user, searchQuery = '', onSelectTask, onSele
                 </div>
               )}
 
-            </>
+            </div>
           )}
         </section>
 

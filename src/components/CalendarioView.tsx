@@ -3,6 +3,7 @@ import { db } from '../firebaseConfig';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { Tarea } from '../types';
 import { User } from 'firebase/auth';
+import { getConcejaliaStyle, getConcejaliaBg } from '../utils/concejaliaColors';
 import {
   format,
   addMonths,
@@ -284,16 +285,7 @@ export default function CalendarioView({ user, searchQuery = '', onSelectTask }:
     }
   };
 
-  const getConcejaliaBg = (concejalia?: string) => {
-    switch(concejalia) {
-      case 'Medioambiente': return 'bg-emerald-500 text-white';
-      case 'Seguridad': return 'bg-blue-500 text-white';
-      case 'Transporte': return 'bg-purple-500 text-white';
-      case 'Hacienda': return 'bg-amber-500 text-white';
-      case 'Entidades privadas': return 'bg-slate-500 text-white';
-      default: return 'bg-slate-50 dark:bg-slate-800/50 border-r border-slate-100 dark:border-slate-700/50';
-    }
-  };
+
 
   const renderDay = () => {
     const dayTasks = getTasksForDate(currentDate);

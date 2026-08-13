@@ -5,7 +5,7 @@ import { Tarea } from '../types';
 import { User } from 'firebase/auth';
 import TaskCreateModal from './TaskCreateModal';
 import TemplateSelectorModal from './TemplateSelectorModal';
-import { getConcejaliaStyle } from '../utils/concejaliaColors';
+import { getConcejaliaStyle, getConcejaliaBg, getPriorityStyle, getPriorityBadgeClass } from '../utils/concejaliaColors';
 
 interface Props {
   user: User;
@@ -142,13 +142,19 @@ export default function RegistroView({ user, searchQuery = '', onSelectTask }: P
     );
   });
 
-  const getPriorityStyle = (prioridad?: string) => {
-    switch(prioridad) {
-      case 'alta': return 'bg-red-50/80 border-red-100 dark:bg-red-900/10 dark:border-red-900/30';
-      case 'media': return 'bg-amber-50/80 border-amber-100 dark:bg-amber-900/10 dark:border-amber-900/30';
-      case 'baja': return 'bg-emerald-50/80 border-emerald-100 dark:bg-emerald-900/10 dark:border-emerald-900/30';
-      default: return 'bg-white dark:bg-slate-800 border-slate-100 dark:border-slate-700';
-    }
+  const getPriorityBadge = (prioridad?: string, priority?: string) => {
+    const val = (prioridad || priority || 'media').toLowerCase();
+    const badgeClass = getPriorityBadgeClass(prioridad, priority);
+    const label = (val === 'alta' || val === 'high' || val === 'urgente' || val === 'urgent') 
+      ? '🔴 Alta' 
+      : (val === 'baja' || val === 'low') 
+        ? '🟩 Baja' 
+        : '🟧 Media';
+    return (
+      <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-md border ${badgeClass} shrink-0`}>
+        {label}
+      </span>
+    );
   };
 
   const getStatusBadge = (status?: string, blockedBy?: string) => {
@@ -166,17 +172,6 @@ export default function RegistroView({ user, searchQuery = '', onSelectTask }: P
         return <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">Completada</span>;
       default:
         return <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300">Pendiente</span>;
-    }
-  };
-
-  const getConcejaliaBg = (concejalia?: string) => {
-    switch(concejalia) {
-      case 'Medioambiente': return 'bg-emerald-500 text-white';
-      case 'Seguridad': return 'bg-blue-500 text-white';
-      case 'Transporte': return 'bg-purple-500 text-white';
-      case 'Hacienda': return 'bg-amber-500 text-white';
-      case 'Entidades privadas': return 'bg-slate-500 text-white';
-      default: return 'bg-slate-50 dark:bg-slate-800/50 border-r border-slate-100 dark:border-slate-700/50';
     }
   };
 
@@ -201,18 +196,18 @@ export default function RegistroView({ user, searchQuery = '', onSelectTask }: P
           </div>
           
           {/* BARRA DE FILTROS AVANZADA POR ESTADO */}
-          <div className="flex flex-wrap items-center gap-1.5 bg-slate-200/60 dark:bg-slate-800/80 p-1.5 rounded-2xl border border-slate-300/50 dark:border-slate-700/50 w-full lg:w-auto overflow-x-auto">
+          <div className="flex items-center gap-1.5 bg-slate-200/60 dark:bg-slate-800/80 p-1.5 rounded-2xl border border-slate-300/50 dark:border-slate-700/50 overflow-x-auto no-scrollbar flex-nowrap max-w-full">
             {filterOptions.map(opt => (
               <button
                 key={opt.key}
                 onClick={() => setFilter(opt.key)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all duration-200 flex items-center gap-1.5 cursor-pointer shrink-0 ${
                   filter === opt.key 
                     ? opt.activeClass 
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-300/40 dark:hover:bg-slate-700/50'
                 }`}
               >
-                <span>{opt.label}</span>
+                <span className="whitespace-nowrap">{opt.label}</span>
                 <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${
                   filter === opt.key 
                     ? 'bg-black/15 dark:bg-white/20 text-current font-extrabold' 
@@ -243,8 +238,10 @@ export default function RegistroView({ user, searchQuery = '', onSelectTask }: P
             </svg>
             Nuevo Expediente
           </button>
-              {/* LIST OF TASKS */}
-        <section className="space-y-3">
+        </section>
+
+        {/* TASK LIST */}
+        <section className="flex flex-col gap-3 animate-fade-in-up" style={{ animationDelay: '100ms' }}>
           {filteredTareas.length === 0 ? (
             <div className="text-center py-12 bg-white dark:bg-slate-800 rounded-3xl border border-slate-100 dark:border-slate-700 transition-colors duration-300">
               <svg className="w-16 h-16 mx-auto text-slate-300 dark:text-slate-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg>
@@ -263,10 +260,10 @@ export default function RegistroView({ user, searchQuery = '', onSelectTask }: P
                   className={`p-4 sm:p-5 rounded-2xl border transition-all duration-200 cursor-pointer shadow-sm hover:shadow-md flex items-center justify-between gap-4 ${
                     tarea.completada 
                       ? 'bg-slate-50 dark:bg-slate-900/40 border-slate-200 dark:border-slate-800 opacity-75' 
-                      : getPriorityStyle(tarea.prioridad)
+                      : getPriorityStyle(tarea.prioridad, (tarea as any).priority)
                   }`}
                 >
-                  <div className="flex items-start gap-4 min-w-0">
+                  <div className="flex items-start gap-4 min-w-0 flex-1">
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -285,12 +282,16 @@ export default function RegistroView({ user, searchQuery = '', onSelectTask }: P
                       )}
                     </button>
 
-                    <div className="min-w-0 space-y-1">
-                      <div className="flex items-center gap-2">
-                        <h3 className={`font-bold text-slate-800 dark:text-slate-100 ${tarea.completada ? 'line-through text-slate-400 dark:text-slate-500' : ''}`}>
-                          {tarea.titulo}
-                        </h3>
+                    <div className="min-w-0 space-y-1.5 flex-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {getStatusBadge(tarea.status, tarea.blockedBy)}
+                        {getPriorityBadge(tarea.prioridad, (tarea as any).priority)}
                       </div>
+
+                      <h3 className={`font-bold text-slate-800 dark:text-slate-100 text-sm sm:text-base leading-snug break-words ${tarea.completada ? 'line-through text-slate-400 dark:text-slate-500' : ''}`}>
+                        {tarea.titulo}
+                      </h3>
+
                       {tarea.projectName && (
                         <div className="text-xs font-medium text-slate-500 dark:text-slate-400 flex flex-wrap items-center gap-1.5">
                           {(() => {
@@ -309,33 +310,28 @@ export default function RegistroView({ user, searchQuery = '', onSelectTask }: P
                         </div>
                       )}
                       {taskNote && (
-                        <p className={`text-sm mt-1 line-clamp-2 leading-relaxed ${tarea.completada ? 'text-slate-400 dark:text-slate-500' : 'text-slate-500 dark:text-slate-400'}`}>
+                        <p className={`text-xs sm:text-sm mt-1 line-clamp-2 leading-relaxed ${tarea.completada ? 'text-slate-400 dark:text-slate-500' : 'text-slate-500 dark:text-slate-400'}`}>
                           {taskNote}
                         </p>
                       )}
                     </div>
                   </div>
-                  <div className="flex flex-wrap items-center gap-3 mt-3">
-                    <span className="text-xs font-medium text-slate-500 dark:text-slate-400 bg-white/50 dark:bg-slate-800/50 px-2 py-1 rounded-md flex items-center gap-1 transition-colors duration-300">
-                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                      {tarea.estimatedTimeMin ? `${tarea.estimatedTimeMin} min` : tarea.tiempo_estimado}
-                    </span>
-                    {tarea.concejalia && (
-                       <span className="text-xs font-medium text-slate-500 dark:text-slate-400 bg-white/50 dark:bg-slate-800/50 px-2 py-1 rounded-md transition-colors duration-300">
-                         {tarea.concejalia}
-                       </span>
-                    )}
-                    {rawDueDate && (
-                      <span className={`text-xs font-medium bg-white/50 dark:bg-slate-800/50 px-2 py-1 rounded-md flex items-center gap-1 transition-colors duration-300 ${
-                        isOverdue ? 'text-red-500 dark:text-red-400 font-semibold' : 'text-slate-500 dark:text-slate-400'
-                      }`}>
-                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                        {new Date(rawDueDate).toLocaleDateString('es-ES', { month: 'short', day: 'numeric' })}
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <div className="hidden sm:flex flex-col items-end gap-1 text-right">
+                      {rawDueDate && (
+                        <span className={`text-xs font-medium ${isOverdue ? 'text-red-500 dark:text-red-400 font-semibold' : 'text-slate-500 dark:text-slate-400'}`}>
+                          {new Date(rawDueDate).toLocaleDateString('es-ES', { month: 'short', day: 'numeric' })}
+                        </span>
+                      )}
+                      <span className="text-xs text-slate-400 dark:text-slate-500">
+                        {tarea.estimatedTimeMin ? `${tarea.estimatedTimeMin} min` : tarea.tiempo_estimado}
                       </span>
-                    )}
+                    </div>
+
                     <button
                       onClick={(e) => handleDeleteTaskDirect(tarea.id!, e)}
-                      className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 transition-all shrink-0 cursor-pointer"
+                      className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 transition-all shrink-0 cursor-pointer"
                       title="Eliminar tarea directamente"
                     >
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
@@ -345,7 +341,6 @@ export default function RegistroView({ user, searchQuery = '', onSelectTask }: P
               );
             })
           )}
-        </section>
         </section>
       
       {isCreatingTask && (

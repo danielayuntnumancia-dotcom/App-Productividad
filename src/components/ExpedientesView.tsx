@@ -5,9 +5,8 @@ import { User } from 'firebase/auth';
 import { Tarea, Project } from '../types';
 import TemplateSelectorModal from './TemplateSelectorModal';
 import ExpedienteBuilderModal from './ExpedienteBuilderModal';
-import { getConcejaliaStyle } from '../utils/concejaliaColors';
-import { useConcejalias } from '../hooks/useConcejalias';
-import { exportExpedientToPDF, exportExpedientToCSV, exportConcejaliaReportToPDF, exportConcejaliaReportToCSV, copyExpedientTasksToClipboard } from '../utils/exportUtils';
+import { getConcejaliaStyle, getPriorityStyle, getPriorityBadgeClass } from '../utils/concejaliaColors';
+import { exportExpedientToPDF, exportExpedientToCSV, copyExpedientTasksToClipboard, exportConcejaliaReportToPDF, exportConcejaliaReportToCSV } from '../utils/exportUtils';
 
 interface Props {
   user: User;
@@ -16,27 +15,23 @@ interface Props {
   onSelectProject?: (project: Project) => void;
 }
 
-type ExpedienteStatusFilter = 'todos' | 'in_progress' | 'waiting_on_third_party' | 'completed';
+type ExpedienteStatusFilter = 'todos' | 'activos' | 'completados' | 'archivados';
+type TaskStatusFilter = 'todos' | 'todo' | 'in_progress' | 'waiting_on_third_party' | 'completed';
 
 export default function ExpedientesView({ user, searchQuery = '', onSelectTask, onSelectProject }: Props) {
-  const concejaliasList = useConcejalias(user.uid);
   const [projects, setProjects] = useState<Project[]>([]);
   const [allTareas, setAllTareas] = useState<Tarea[]>([]);
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
   const [isCreatingExpediente, setIsCreatingExpediente] = useState(false);
   const [isCreatingBuilder, setIsCreatingBuilder] = useState(false);
-  const [statusFilter, setStatusFilter] = useState<ExpedienteStatusFilter>('todos');
 
-  // Estados locales de filtrado y búsqueda avanzada
-  const [localSearchQuery, setLocalSearchQuery] = useState(searchQuery);
-  const [selectedConcejalia, setSelectedConcejalia] = useState<string>('ALL');
-  const [selectedStatus, setSelectedStatus] = useState<'ALL' | 'active' | 'completed' | 'archived'>('ALL');
+  // Filtros
+  const [concejaliaFilter, setConcejaliaFilter] = useState<string>('todas');
+  const [expedienteStatusFilter, setExpedienteStatusFilter] = useState<ExpedienteStatusFilter>('todos');
+  const [taskStatusFilter, setTaskStatusFilter] = useState<TaskStatusFilter>('todos');
+  const [copySuccessMsg, setCopySuccessMsg] = useState<string | null>(null);
 
-  useEffect(() => {
-    setLocalSearchQuery(searchQuery);
-  }, [searchQuery]);
-
-  // Escuchar documentos de expedientes (isProject: true en /tareas y /projects)
+  // Escuchar documentos de expedientes (isProject: true en /tareas)
   useEffect(() => {
     const qProjects = query(
       collection(db, 'tareas'),
@@ -121,12 +116,19 @@ export default function ExpedientesView({ user, searchQuery = '', onSelectTask, 
       expedienteTasks.forEach(t => {
         if (t.id) batch.delete(doc(db, 'tareas', t.id));
       });
-      if (projectId) {
-        batch.delete(doc(db, 'tareas', projectId));
-      }
+      batch.delete(doc(db, 'tareas', projectId));
       await batch.commit();
     } catch (err) {
       console.error("Error deleting expediente batch: ", err);
+    }
+  };
+
+  const handleCopyClipboard = async (project: Project, tasks: Tarea[], e: React.MouseEvent) => {
+    e.stopPropagation();
+    const ok = await copyExpedientTasksToClipboard(project, tasks);
+    if (ok) {
+      setCopySuccessMsg(`¡Tareas de "${project.name}" copiadas al portapapeles!`);
+      setTimeout(() => setCopySuccessMsg(null), 3000);
     }
   };
 
@@ -161,87 +163,55 @@ export default function ExpedientesView({ user, searchQuery = '', onSelectTask, 
 
   const effectiveProjects = Object.values(effectiveProjectsMap);
 
-  // Calcular el estado efectivo de un expediente (Asignado explícitamente o derivado si todas sus tareas están completas)
+  // Lista de concejalías únicas para el desplegable de filtro
+  const availableConcejalias = Array.from(
+    new Set(effectiveProjects.map((p) => p.concejalia || 'General'))
+  ).sort();
+
+  // Filtrado de proyectos por Estado e Identificación de Contratos Menores
   const getProjectEffectiveStatus = (proj: Project): 'active' | 'completed' | 'archived' => {
     if (proj.status === 'archived') return 'archived';
-    if (proj.status === 'completed') return 'completed';
-    
-    const projTasks = allTareas.filter(t => t.projectId === proj.id);
-    if (projTasks.length > 0) {
-      const allCompleted = projTasks.every(t => t.status === 'completed' || t.completada);
-      if (allCompleted) return 'completed';
+    const projTasks = allTareas.filter((t) => t.projectId === proj.id);
+    if (projTasks.length > 0 && projTasks.every((t) => t.status === 'completed' || t.completada)) {
+      return 'completed';
     }
     return 'active';
   };
 
-  // Renderizar insignia de estado del proyecto
-  const renderProjectStatusBadge = (status: 'active' | 'completed' | 'archived') => {
-    switch (status) {
-      case 'archived':
-        return <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 shrink-0">📦 Archivado</span>;
-      case 'completed':
-        return <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 shrink-0">✅ Completado</span>;
-      default:
-        return <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 shrink-0">🟢 Activo</span>;
-    }
+  const isContratoMenorProject = (proj: Project): boolean => {
+    if (proj.type === 'contrato_menor' || proj.isContratoMenor) return true;
+    const projTasks = allTareas.filter(t => t.projectId === proj.id);
+    return projTasks.some(t => (t as any).isContratoMenor || (t as any).templateId === 'contrato_menor');
   };
 
-  // Filtrado de tareas según statusFilter
+  // Filtrado de tareas según taskStatusFilter
   const filterTaskByStatus = (t: Tarea): boolean => {
-    if (statusFilter === 'todos') return true;
+    if (taskStatusFilter === 'todos') return true;
     const isCompleted = t.status === 'completed' || !!t.completada;
-    if (statusFilter === 'in_progress') return !isCompleted && t.status === 'in_progress';
-    if (statusFilter === 'waiting_on_third_party') return !isCompleted && t.status === 'waiting_on_third_party';
-    if (statusFilter === 'completed') return isCompleted;
+    if (taskStatusFilter === 'todo') return !isCompleted && (t.status === 'todo' || !t.status);
+    if (taskStatusFilter === 'in_progress') return !isCompleted && t.status === 'in_progress';
+    if (taskStatusFilter === 'waiting_on_third_party') return !isCompleted && t.status === 'waiting_on_third_party';
+    if (taskStatusFilter === 'completed') return isCompleted;
     return true;
   };
 
-  // Filtrar expedientes según los criterios combinados (Buscador, Concejalía, Estado de Expediente y Estado de Tareas)
-  const filteredProjects = effectiveProjects.filter((proj) => {
-    // 1. Filtro de concejalía
-    if (selectedConcejalia !== 'ALL' && (proj.concejalia || 'General') !== selectedConcejalia) {
-      return false;
-    }
-
-    // 2. Filtro de estado de proyecto
-    const effectiveStatus = getProjectEffectiveStatus(proj);
-    if (selectedStatus !== 'ALL' && effectiveStatus !== selectedStatus) {
-      return false;
-    }
-
-    // 3. Filtro por tareas según statusFilter
-    if (statusFilter !== 'todos') {
-      const projTasks = allTareas.filter(t => t.projectId === proj.id);
-      const hasMatchingTask = projTasks.some(filterTaskByStatus);
-      if (!hasMatchingTask) return false;
-    }
-
-    // 4. Filtro de búsqueda textual (Código EXP, Nombre de expediente, Concejalía, o tareas/notas asociadas)
-    if (localSearchQuery.trim()) {
-      const q = localSearchQuery.toLowerCase();
-      const codeMatch = proj.expedientCode ? proj.expedientCode.toLowerCase().includes(q) : false;
-      const nameMatch = proj.name ? proj.name.toLowerCase().includes(q) : false;
-      const concejaliaMatch = proj.concejalia ? proj.concejalia.toLowerCase().includes(q) : false;
-      
-      const taskMatch = allTareas.some(t => t.projectId === proj.id && (
-        (t.titulo && t.titulo.toLowerCase().includes(q)) ||
-        (t.title && t.title.toLowerCase().includes(q)) ||
-        (t.notas && t.notas.toLowerCase().includes(q)) ||
-        (t.notes && t.notes.toLowerCase().includes(q))
-      ));
-
-      return codeMatch || nameMatch || concejaliaMatch || taskMatch;
-    }
-
-    return true;
-  });
+  // Agrupar proyectos por Concejalía
   const concejaliaGroups: Record<string, Project[]> = {};
 
-  filteredProjects.forEach((proj) => {
+  effectiveProjects.forEach((proj) => {
     const groupName = proj.concejalia || 'General';
-    // Si hay filtro de estado, verificar si el proyecto contiene tareas que coincidan
-    const projTasks = allTareas.filter(t => t.projectId === proj.id);
-    if (statusFilter !== 'todos') {
+
+    if (concejaliaFilter !== 'todas' && groupName !== concejaliaFilter) {
+      return;
+    }
+
+    const effStatus = getProjectEffectiveStatus(proj);
+    if (expedienteStatusFilter !== 'todos' && effStatus !== expedienteStatusFilter) {
+      return;
+    }
+
+    const projTasks = allTareas.filter((t) => t.projectId === proj.id);
+    if (taskStatusFilter !== 'todos') {
       const hasMatchingTask = projTasks.some(filterTaskByStatus);
       if (!hasMatchingTask && projTasks.length > 0) return;
     }
@@ -250,12 +220,19 @@ export default function ExpedientesView({ user, searchQuery = '', onSelectTask, 
     concejaliaGroups[groupName].push(proj);
   });
 
-  // Identificar si un expediente es Contrato Menor
-  const isContratoMenorProject = (p: Project | any): boolean => {
-    if (p.isContratoMenor) return true;
-    if (p.templateId === 'contrato_menor' || p.type === 'contrato_menor') return true;
-    const nameLower = (p.name || p.projectName || '').toLowerCase();
-    return nameLower.includes('contrato menor') || nameLower.includes('contrato m');
+  const getPriorityBadge = (prioridad?: string, priority?: string) => {
+    const val = (prioridad || priority || 'media').toLowerCase();
+    const badgeClass = getPriorityBadgeClass(prioridad, priority);
+    const label = (val === 'alta' || val === 'high' || val === 'urgente' || val === 'urgent') 
+      ? '🔴 Alta' 
+      : (val === 'baja' || val === 'low') 
+        ? '🟩 Baja' 
+        : '🟧 Media';
+    return (
+      <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-md border ${badgeClass} shrink-0`}>
+        {label}
+      </span>
+    );
   };
 
   const getStatusBadge = (status?: string, blockedBy?: string) => {
@@ -271,25 +248,38 @@ export default function ExpedientesView({ user, searchQuery = '', onSelectTask, 
     }
   };
 
-  const concejaliaNames = Object.keys(concejaliaGroups);
-  const isFilteringActive = localSearchQuery.trim() !== '' || selectedConcejalia !== 'ALL' || selectedStatus !== 'ALL';
-
-  const resetFilters = () => {
-    setLocalSearchQuery('');
-    setSelectedConcejalia('ALL');
-    setSelectedStatus('ALL');
+  const renderProjectStatusBadge = (status: 'active' | 'completed' | 'archived') => {
+    switch (status) {
+      case 'completed':
+        return <span className="px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">✅ Completado</span>;
+      case 'archived':
+        return <span className="px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-600">📦 Archivado</span>;
+      default:
+        return <span className="px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300 border border-blue-200 dark:border-blue-800">🟢 Activo</span>;
+    }
   };
 
-  const filterPills: { key: ExpedienteStatusFilter; label: string; count: number }[] = [
-    { key: 'todos', label: 'Todos los Expedientes', count: effectiveProjects.length },
-    { key: 'in_progress', label: '⚡ En Curso', count: allTareas.filter(t => t.status === 'in_progress').length },
-    { key: 'waiting_on_third_party', label: '⚠️ Retenidos por Terceros', count: allTareas.filter(t => t.status === 'waiting_on_third_party').length },
-    { key: 'completed', label: '✅ Completados', count: allTareas.filter(t => t.status === 'completed' || t.completada).length },
-  ];
+  const filteredConcejaliaNames = Object.keys(concejaliaGroups).filter((cName) => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    if (cName.toLowerCase().includes(q)) return true;
+    return concejaliaGroups[cName].some((p) =>
+      p.name.toLowerCase().includes(q) ||
+      (p.expedientCode && p.expedientCode.toLowerCase().includes(q)) ||
+      allTareas.some(t => t.projectId === p.id && (t.titulo?.toLowerCase().includes(q) || t.title?.toLowerCase().includes(q) || t.notas?.toLowerCase().includes(q)))
+    );
+  });
 
   return (
     <div className="p-4 sm:p-6 md:p-8 max-w-7xl mx-auto w-full space-y-6 animate-fade-in">
       
+      {/* MENSAJE DE COPIADO EXITOSO */}
+      {copySuccessMsg && (
+        <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white text-xs sm:text-sm font-semibold px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2 border border-slate-700 animate-bounce">
+          <span>📋</span> {copySuccessMsg}
+        </div>
+      )}
+
       {/* HEADER SECTION */}
       <section className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -299,174 +289,112 @@ export default function ExpedientesView({ user, searchQuery = '', onSelectTask, 
         
         <div className="flex flex-wrap items-center gap-2.5">
           <button 
-            onClick={() => setIsCreatingBuilder(true)}
-            className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl shadow-md hover:shadow-lg transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer shrink-0"
+            onClick={() => exportConcejaliaReportToPDF(concejaliaFilter !== 'todas' ? concejaliaFilter : 'General', effectiveProjects, allTareas)}
+            className="px-3.5 py-2 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 font-bold text-xs rounded-xl border border-rose-200 dark:border-rose-800 transition-all flex items-center gap-1.5 cursor-pointer"
+            title="Exportar informe en PDF"
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-            </svg>
-            ⚡ Constructor Dinámico
+            <span>📄</span> Informe PDF
+          </button>
+          
+          <button 
+            onClick={() => exportConcejaliaReportToCSV(concejaliaFilter !== 'todas' ? concejaliaFilter : 'General', effectiveProjects, allTareas)}
+            className="px-3.5 py-2 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 font-bold text-xs rounded-xl border border-emerald-200 dark:border-emerald-800 transition-all flex items-center gap-1.5 cursor-pointer"
+            title="Exportar a Microsoft Excel"
+          >
+            <span>📊</span> Excel
+          </button>
+
+          <button 
+            onClick={() => setIsCreatingBuilder(true)}
+            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs rounded-xl shadow-md hover:shadow-lg transition-all duration-200 flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
+          >
+            <span>⚡</span> Constructor Dinámico
           </button>
           
           <button 
             onClick={() => setIsCreatingExpediente(true)}
-            className="px-4 py-2.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-semibold rounded-xl transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer shrink-0"
+            className="px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-semibold text-xs rounded-xl transition-all duration-200 flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
           >
-            <svg className="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-            </svg>
-            Plantillas Recurrentes
+            <span>📋</span> Plantillas Recurrentes
           </button>
         </div>
       </section>
 
-      {/* BARRA DE HERRAMIENTAS: BUSCADOR Y FILTROS AVANZADOS */}
-      <section className="bg-white dark:bg-slate-800 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-700/80 shadow-sm space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
-          
-          {/* BUSCADOR TEXTUAL */}
-          <div className="md:col-span-6 relative">
-            <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-            </div>
-            <input
-              type="text"
-              value={localSearchQuery}
-              onChange={(e) => setLocalSearchQuery(e.target.value)}
-              placeholder="Buscar por Expediente (EXP-2026-XXXX), nombre o tareas..."
-              className="w-full pl-10 pr-10 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm font-medium text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
-            />
-            {localSearchQuery && (
-              <button
-                onClick={() => setLocalSearchQuery('')}
-                className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-              >
-                ✕
-              </button>
-            )}
-          </div>
-
-          {/* FILTRO POR CONCEJALÍA */}
-          <div className="md:col-span-3">
-            <select
-              value={selectedConcejalia}
-              onChange={(e) => setSelectedConcejalia(e.target.value)}
-              className="w-full py-2.5 px-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm font-semibold text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
-            >
-              <option value="ALL">🏛️ Todas las Concejalías</option>
-              {Array.from(new Set([...concejaliasList, ...effectiveProjects.map(p => p.concejalia).filter(Boolean)])).map((cName) => (
-                <option key={cName} value={cName}>{cName}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* FILTRO POR ESTADO DEL EXPEDIENTE */}
-          <div className="md:col-span-3">
-            <select
-              value={selectedStatus}
-              onChange={(e) => setSelectedStatus(e.target.value as any)}
-              className="w-full py-2.5 px-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm font-semibold text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
-            >
-              <option value="ALL">📋 Todos los Estados</option>
-              <option value="active">🟢 Activos</option>
-              <option value="completed">✅ Completados</option>
-              <option value="archived">📦 Archivados</option>
-            </select>
-          </div>
-
+      {/* BARRA DE FILTROS AVANZADOS (Concejalía + Estado Expediente + Estado Tarea) */}
+      <section className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 p-3.5 rounded-2xl shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 text-xs">
+        {/* Selector de Concejalía */}
+        <div className="flex items-center gap-2 min-w-[200px]">
+          <span className="font-bold text-slate-500 dark:text-slate-400 shrink-0">🏛️ Concejalía:</span>
+          <select
+            value={concejaliaFilter}
+            onChange={(e) => setConcejaliaFilter(e.target.value)}
+            className="w-full bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl px-2.5 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 outline-none focus:border-indigo-500"
+          >
+            <option value="todas">Todas las concejalías ({effectiveProjects.length})</option>
+            {availableConcejalias.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
         </div>
 
-        {/* BARRA DE FILTRO POR ESTADO DE TAREA */}
-        <div className="pt-2 border-t border-slate-100 dark:border-slate-700/50 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-1.5 bg-slate-100 dark:bg-slate-900/60 p-1.5 rounded-2xl border border-slate-200 dark:border-slate-700/50">
-            {filterPills.map(opt => (
-              <button
-                key={opt.key}
-                onClick={() => setStatusFilter(opt.key)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all duration-200 flex items-center gap-1.5 cursor-pointer ${
-                  statusFilter === opt.key 
-                    ? (opt.key === 'waiting_on_third_party' 
-                        ? 'bg-amber-500 text-white shadow-sm' 
-                        : opt.key === 'completed'
-                          ? 'bg-emerald-600 text-white shadow-sm'
-                          : opt.key === 'in_progress'
-                            ? 'bg-indigo-600 text-white shadow-sm'
-                            : 'bg-slate-800 dark:bg-slate-200 text-white dark:text-slate-900 shadow-sm')
-                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-200/50 dark:hover:bg-slate-800/50'
-                }`}
-              >
-                <span>{opt.label}</span>
-                <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${
-                  statusFilter === opt.key ? 'bg-black/15 dark:bg-white/20 text-current font-extrabold' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-semibold'
-                }`}>
-                  {opt.count}
-                </span>
-              </button>
-            ))}
-          </div>
+        {/* Filtro por Estado de Expediente */}
+        <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-700/50 p-1 rounded-xl shrink-0 overflow-x-auto no-scrollbar flex-nowrap max-w-full">
+          <span className="font-bold text-slate-400 dark:text-slate-500 px-1 text-[11px]">Expediente:</span>
+          {(['todos', 'activos', 'completados', 'archivados'] as const).map((st) => (
+            <button
+              key={st}
+              onClick={() => setExpedienteStatusFilter(st)}
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer capitalize shrink-0 ${
+                expedienteStatusFilter === st
+                  ? 'bg-white dark:bg-slate-600 text-slate-800 dark:text-slate-100 shadow-xs'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+              }`}
+            >
+              {st}
+            </button>
+          ))}
+        </div>
 
-          <div className="flex flex-wrap items-center gap-3 text-xs">
-            <span className="font-semibold text-slate-500 dark:text-slate-400">
-              Mostrando <strong className="text-indigo-600 dark:text-indigo-400 font-bold">{filteredProjects.length}</strong> de {effectiveProjects.length} expedientes
-            </span>
-
-            {/* BOTONES DE EXPORTAR CONCEJALÍA O VISTA GENERAL */}
-            <div className="flex items-center gap-1.5 ml-auto sm:ml-0">
-              <button
-                onClick={() => exportConcejaliaReportToPDF(selectedConcejalia, filteredProjects, allTareas)}
-                className="px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100 font-semibold text-[11px] transition-colors flex items-center gap-1 cursor-pointer"
-                title="Exportar informe PDF oficial de los expedientes mostrados"
-              >
-                <span>📄 Informe PDF</span>
-              </button>
-              <button
-                onClick={() => exportConcejaliaReportToCSV(selectedConcejalia, filteredProjects, allTareas)}
-                className="px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 font-semibold text-[11px] transition-colors flex items-center gap-1 cursor-pointer"
-                title="Exportar hoja Excel CSV de los expedientes mostrados"
-              >
-                <span>📊 Excel</span>
-              </button>
-            </div>
-
-            {isFilteringActive && (
-              <button
-                onClick={resetFilters}
-                className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 flex items-center gap-1 cursor-pointer transition-colors"
-              >
-                <span>✕ Limpiar Filtros</span>
-              </button>
-            )}
-          </div>
+        {/* Filtro por Estado de Tareas Hijas */}
+        <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-700/50 p-1 rounded-xl shrink-0 overflow-x-auto no-scrollbar flex-nowrap max-w-full">
+          <span className="font-bold text-slate-400 dark:text-slate-500 px-1 text-[11px]">Trámites:</span>
+          {[
+            { key: 'todos', label: 'Todos' },
+            { key: 'todo', label: 'Pendientes' },
+            { key: 'in_progress', label: 'En Curso' },
+            { key: 'waiting_on_third_party', label: '⚠️ Retenidos' },
+            { key: 'completed', label: 'Completados' }
+          ].map((tOpt) => (
+            <button
+              key={tOpt.key}
+              onClick={() => setTaskStatusFilter(tOpt.key as TaskStatusFilter)}
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer shrink-0 ${
+                taskStatusFilter === tOpt.key
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+              }`}
+            >
+              {tOpt.label}
+            </button>
+          ))}
         </div>
       </section>
 
       {/* ÁRBOL JERÁRQUICO */}
-      {concejaliaNames.length === 0 ? (
+      {filteredConcejaliaNames.length === 0 ? (
         <div className="text-center py-16 bg-white dark:bg-slate-800 rounded-3xl border border-slate-100 dark:border-slate-700">
           <svg className="w-16 h-16 mx-auto text-slate-300 dark:text-slate-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
           </svg>
-          <p className="text-slate-500 dark:text-slate-400 font-medium">No se encontraron expedientes con los filtros aplicados</p>
-          {isFilteringActive && (
-            <button
-              onClick={resetFilters}
-              className="mt-3 px-4 py-2 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 font-bold rounded-xl text-xs"
-            >
-              Restablecer Filtros
-            </button>
-          )}
+          <p className="text-slate-500 dark:text-slate-400 font-medium">No se encontraron expedientes con los filtros seleccionados</p>
         </div>
       ) : (
         <div className="space-y-8">
-          {concejaliaNames.map((concejaliaName) => {
+          {filteredConcejaliaNames.map((concejaliaName) => {
             const projectsInGroup = concejaliaGroups[concejaliaName];
             const cStyle = getConcejaliaStyle(concejaliaName);
-
-            const cmProjectsInGroup = projectsInGroup.filter(isContratoMenorProject);
-            const regularProjectsInGroup = projectsInGroup.filter(p => !isContratoMenorProject(p));
-            const isSubfolderExpanded = expandedProjects.has(`folder_cm_${concejaliaName}`);
 
             const getTaskSortOrder = (t: Tarea): number => {
               const text = t.title || t.titulo || '';
@@ -490,6 +418,12 @@ export default function ExpedientesView({ user, searchQuery = '', onSelectTask, 
                 return titleA.localeCompare(titleB, undefined, { numeric: true, sensitivity: 'base' });
               });
             };
+
+            // Clasificar en Expedientes Ordinarios y Subcarpeta de Contratos Menores
+            const regularProjectsInGroup = projectsInGroup.filter(p => !isContratoMenorProject(p));
+            const cmProjectsInGroup = projectsInGroup.filter(p => isContratoMenorProject(p));
+            const isSubfolderExpanded = expandedProjects.has(`subfolder_cm_${concejaliaName}`);
+
             const renderProjectCard = (project: Project) => {
               const isExpanded = expandedProjects.has(project.id!);
               const projectTasks = sortTasksNaturally(allTareas.filter(t => t.projectId === project.id));
@@ -498,11 +432,16 @@ export default function ExpedientesView({ user, searchQuery = '', onSelectTask, 
               const projCStyle = getConcejaliaStyle(project.concejalia);
               const effStatus = getProjectEffectiveStatus(project);
 
+              const hasHighPriority = projectTasks.some(t => {
+                const p = (t.prioridad || (t as any).priority || '').toLowerCase();
+                return p === 'alta' || p === 'high' || p === 'urgente' || p === 'urgent';
+              });
+
               return (
                 <div 
                   key={project.id}
                   data-project-card="true"
-                  className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-200"
+                  className={`bg-white dark:bg-slate-800 border-t border-r border-b border-slate-200 dark:border-slate-700/80 border-l-4 ${projCStyle.borderL} rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-200`}
                 >
                   {/* CABECERA EXPEDIENTE (Estructura en 2 Filas Anti-Solapamientos) */}
                   <div 
@@ -543,6 +482,11 @@ export default function ExpedientesView({ user, searchQuery = '', onSelectTask, 
                               </span>
                             )}
                             {renderProjectStatusBadge(effStatus)}
+                            {hasHighPriority && (
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-red-100 dark:bg-red-900/60 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800 shrink-0">
+                                🔴 Alta Prioridad
+                              </span>
+                            )}
                           </div>
 
                           <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -568,21 +512,23 @@ export default function ExpedientesView({ user, searchQuery = '', onSelectTask, 
 
                     {/* Fila 2: Barra de herramientas de acciones y contador de tareas */}
                     <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-slate-700/50">
-                      <span className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-700/80 text-slate-600 dark:text-slate-300 shrink-0">
-                        {completedCount}/{totalCount} tareas
-                      </span>
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700/60 px-2.5 py-1 rounded-full">
+                          {completedCount}/{totalCount} tareas ({totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0}%)
+                        </span>
+                      </div>
 
-                      <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
+                      <div className="flex items-center gap-1.5 shrink-0">
                         <button
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
                             exportExpedientToPDF(project, projectTasks);
                           }}
-                          className="px-2 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 font-bold text-[10px] cursor-pointer"
-                          title="Exportar informe PDF"
+                          className="px-2.5 py-1 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 font-bold text-[11px] rounded-lg border border-rose-200 dark:border-rose-800/60 transition-all flex items-center gap-1 cursor-pointer"
+                          title="Exportar expediente en PDF"
                         >
-                          PDF
+                          📄 PDF
                         </button>
                         <button
                           type="button"
@@ -590,24 +536,18 @@ export default function ExpedientesView({ user, searchQuery = '', onSelectTask, 
                             e.stopPropagation();
                             exportExpedientToCSV(project, projectTasks);
                           }}
-                          className="px-2 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 font-bold text-[10px] cursor-pointer"
-                          title="Exportar Excel (CSV)"
+                          className="px-2.5 py-1 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 font-bold text-[11px] rounded-lg border border-emerald-200 dark:border-emerald-800/60 transition-all flex items-center gap-1 cursor-pointer"
+                          title="Exportar expediente a Excel"
                         >
-                          XLS
+                          📊 XLS
                         </button>
                         <button
                           type="button"
-                          onClick={async (e) => {
-                            e.stopPropagation();
-                            const ok = await copyExpedientTasksToClipboard(project, projectTasks);
-                            if (ok) {
-                              alert("¡Lista de tareas copiada al portapapeles (lista para WhatsApp/Email)!");
-                            }
-                          }}
-                          className="px-2 py-1 rounded-lg bg-amber-50 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 hover:bg-amber-100 font-bold text-[10px] cursor-pointer"
-                          title="Copiar lista para WhatsApp / Email"
+                          onClick={(e) => handleCopyClipboard(project, projectTasks, e)}
+                          className="px-2.5 py-1 bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 font-bold text-[11px] rounded-lg border border-indigo-200 dark:border-indigo-800/60 transition-all flex items-center gap-1 cursor-pointer"
+                          title="Copiar lista para WhatsApp / Correo"
                         >
-                          TXT
+                          📋 TXT
                         </button>
 
                         <button
@@ -655,7 +595,11 @@ export default function ExpedientesView({ user, searchQuery = '', onSelectTask, 
                               <div
                                 key={tarea.id}
                                 onClick={() => onSelectTask(tarea)}
-                                className="p-3 bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700/60 rounded-xl flex items-center justify-between gap-3 hover:border-indigo-300 dark:hover:border-indigo-600 cursor-pointer transition-all shadow-2xs"
+                                className={`p-3 rounded-xl flex items-center justify-between gap-3 border transition-all shadow-2xs cursor-pointer ${
+                                  isCompleted 
+                                    ? 'bg-white/60 dark:bg-slate-800/60 border-slate-100 dark:border-slate-700/60 opacity-70' 
+                                    : getPriorityStyle(tarea.prioridad, (tarea as any).priority)
+                                }`}
                               >
                                 <div className="flex items-center gap-3 min-w-0 flex-1">
                                   <button
@@ -690,6 +634,7 @@ export default function ExpedientesView({ user, searchQuery = '', onSelectTask, 
 
                                 <div className="flex items-center gap-2 shrink-0">
                                   {getStatusBadge(tarea.status, tarea.blockedBy)}
+                                  {getPriorityBadge(tarea.prioridad, (tarea as any).priority)}
                                   <span className="text-[11px] font-medium text-slate-400 bg-slate-100 dark:bg-slate-700/50 px-2 py-0.5 rounded">
                                     {tarea.estimatedTimeMin ? `${tarea.estimatedTimeMin} min` : tarea.tiempo_estimado}
                                   </span>
@@ -708,7 +653,6 @@ export default function ExpedientesView({ user, searchQuery = '', onSelectTask, 
                       )}
                     </div>
                   )}
-
                 </div>
               );
             };
@@ -727,49 +671,48 @@ export default function ExpedientesView({ user, searchQuery = '', onSelectTask, 
                   </span>
                 </div>
 
-                {/* NIVEL 2: TARJETAS DE EXPEDIENTES (ORDINARIOS + SUBCARPETAS) */}
-                <div className="space-y-3 pl-2 sm:pl-4">
-                  {/* SUBCARPETAMÁSTER DE CONTRATOS MENORES SI EXISTEN EN ESTA CONCEJALÍA */}
+                {/* NIVEL 2: LISTA DE EXPEDIENTES ORDINARIOS Y SUBCARPETA CONTRATOS MENORES */}
+                <div className="grid grid-cols-1 gap-4 pl-2 sm:pl-4 border-l-2 border-slate-100 dark:border-slate-800">
+                  
+                  {/* EXPEDIENTES ORDINARIOS */}
+                  {regularProjectsInGroup.map((project) => renderProjectCard(project))}
+
+                  {/* SUBCARPETA MÁSTER DE CONTRATOS MENORES DE LA CONCEJALÍA */}
                   {cmProjectsInGroup.length > 0 && (
-                    <div className="bg-indigo-50/60 dark:bg-indigo-950/20 border-2 border-indigo-200 dark:border-indigo-800/60 rounded-2xl overflow-hidden shadow-xs">
+                    <div className="bg-amber-50/40 dark:bg-amber-950/20 border-2 border-amber-300 dark:border-amber-700/60 rounded-2xl overflow-hidden shadow-sm">
                       <div
-                        onClick={() => toggleProject(`folder_cm_${concejaliaName}`)}
-                        className="p-4 flex items-center justify-between cursor-pointer hover:bg-indigo-100/50 dark:hover:bg-indigo-900/30 transition-colors"
+                        onClick={() => toggleProject(`subfolder_cm_${concejaliaName}`)}
+                        className="p-4 sm:p-5 flex items-center justify-between cursor-pointer hover:bg-amber-100/50 dark:hover:bg-amber-900/30 transition-colors"
                       >
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold text-sm shadow-sm shrink-0">
-                            📜
-                          </div>
+                        <div className="flex items-center gap-3 min-w-0">
+                          <button className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0">
+                            <svg 
+                              className={`w-4 h-4 transition-transform duration-200 ${isSubfolderExpanded ? 'rotate-90' : ''}`}
+                              fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                            >
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                            </svg>
+                          </button>
                           <div>
-                            <h3 className="font-bold text-indigo-950 dark:text-indigo-100 text-sm sm:text-base">
-                              Subcarpeta: Contratos Menores
+                            <h3 className="font-extrabold text-amber-900 dark:text-amber-200 text-sm sm:text-base flex items-center gap-2">
+                              <span>📜</span> Subcarpeta: Contratos Menores ({cmProjectsInGroup.length})
                             </h3>
-                            <p className="text-xs text-indigo-600 dark:text-indigo-400 font-semibold">
-                              {cmProjectsInGroup.length} {cmProjectsInGroup.length === 1 ? 'contrato menor' : 'contratos menores'}
+                            <p className="text-xs text-amber-700 dark:text-amber-400 font-medium">
+                              Contratos menores asociados a {concejaliaName}
                             </p>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-indigo-100 text-indigo-700 dark:bg-indigo-900/60 dark:text-indigo-300">
-                            {isSubfolderExpanded ? 'Ocultar' : `Desplegar (${cmProjectsInGroup.length})`}
-                          </span>
-                          <svg className={`w-5 h-5 text-indigo-600 dark:text-indigo-400 transition-transform duration-200 ${isSubfolderExpanded ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
-                          </svg>
-                        </div>
                       </div>
 
-                      {/* CONTRATOS MENORES DENTRO DE LA SUBCARPETA */}
+                      {/* CONTRATOS MENORES DESPLEGADOS */}
                       {isSubfolderExpanded && (
-                        <div className="p-3 space-y-3 bg-white/60 dark:bg-slate-900/40 border-t border-indigo-100 dark:border-indigo-900/40">
-                          {cmProjectsInGroup.map((project) => renderProjectCard(project))}
+                        <div className="p-4 pt-2 border-t border-amber-200 dark:border-amber-800/50 space-y-4">
+                          {cmProjectsInGroup.map((cmProj) => renderProjectCard(cmProj))}
                         </div>
                       )}
                     </div>
                   )}
 
-                  {/* EXPEDIENTES ORDINARIOS DE LA CONCEJALÍA */}
-                  {regularProjectsInGroup.map((project) => renderProjectCard(project))}
                 </div>
               </div>
             );
