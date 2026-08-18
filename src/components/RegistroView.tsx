@@ -5,7 +5,9 @@ import { Tarea } from '../types';
 import { User } from 'firebase/auth';
 import TaskCreateModal from './TaskCreateModal';
 import TemplateSelectorModal from './TemplateSelectorModal';
+import BulkTaskActionBar from './BulkTaskActionBar';
 import { getConcejaliaStyle, getConcejaliaBg, getPriorityStyle, getPriorityBadgeClass } from '../utils/concejaliaColors';
+import { useConcejalias } from '../hooks/useConcejalias';
 
 interface Props {
   user: User;
@@ -16,10 +18,12 @@ interface Props {
 type StatusFilterOption = 'todas' | 'todo' | 'in_progress' | 'waiting_on_third_party' | 'completed';
 
 export default function RegistroView({ user, searchQuery = '', onSelectTask }: Props) {
+  const concejaliasList = useConcejalias(user.uid);
   const [tareas, setTareas] = useState<Tarea[]>([]);
   const [isCreatingTask, setIsCreatingTask] = useState(false);
   const [isCreatingExpediente, setIsCreatingExpediente] = useState(false);
   const [filter, setFilter] = useState<StatusFilterOption>('todas');
+  const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
 
   useEffect(() => {
     const q = query(
@@ -252,18 +256,42 @@ export default function RegistroView({ user, searchQuery = '', onSelectTask }: P
               const rawDueDate = tarea.dueDate || tarea.fecha_vencimiento;
               const isOverdue = !!rawDueDate && rawDueDate < Date.now() && tarea.status !== 'completed' && !tarea.completada;
               const taskNote = tarea.notas || tarea.notes;
+              const isSelected = !!tarea.id && selectedTaskIds.includes(tarea.id);
 
               return (
                 <div
                   key={tarea.id}
                   onClick={() => onSelectTask(tarea)}
                   className={`p-4 sm:p-5 rounded-2xl border transition-all duration-200 cursor-pointer shadow-sm hover:shadow-md flex items-center justify-between gap-4 ${
-                    tarea.completada 
-                      ? 'bg-slate-50 dark:bg-slate-900/40 border-slate-200 dark:border-slate-800 opacity-75' 
-                      : getPriorityStyle(tarea.prioridad, (tarea as any).priority)
+                    isSelected
+                      ? 'bg-indigo-50/90 dark:bg-indigo-950/40 border-indigo-500 ring-2 ring-indigo-500/30'
+                      : (tarea.completada 
+                          ? 'bg-slate-50 dark:bg-slate-900/40 border-slate-200 dark:border-slate-800 opacity-75' 
+                          : getPriorityStyle(tarea.prioridad, (tarea as any).priority))
                   }`}
                 >
-                  <div className="flex items-start gap-4 min-w-0 flex-1">
+                  <div className="flex items-start gap-3.5 min-w-0 flex-1">
+                    {/* Checkbox de Selección Masiva */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (!tarea.id) return;
+                        setSelectedTaskIds(prev =>
+                          prev.includes(tarea.id!) ? prev.filter(id => id !== tarea.id) : [...prev, tarea.id!]
+                        );
+                      }}
+                      className={`w-5 h-5 rounded-md border flex items-center justify-center text-[10px] font-black transition-all cursor-pointer mt-0.5 shrink-0 ${
+                        isSelected
+                          ? 'bg-indigo-600 border-indigo-600 text-white shadow-xs'
+                          : 'border-slate-300 dark:border-slate-600 bg-white/80 dark:bg-slate-800 text-transparent hover:border-indigo-400'
+                      }`}
+                      title={isSelected ? 'Desmarcar tarea' : 'Seleccionar para edición en masa'}
+                    >
+                      ✓
+                    </button>
+
+                    {/* Botón de Completar */}
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -274,6 +302,7 @@ export default function RegistroView({ user, searchQuery = '', onSelectTask }: P
                           ? 'bg-emerald-500 border-emerald-500 text-white' 
                           : 'border-slate-300 dark:border-slate-600 hover:border-indigo-500'
                       }`}
+                      title="Marcar como completada"
                     >
                       {tarea.completada && (
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -356,6 +385,22 @@ export default function RegistroView({ user, searchQuery = '', onSelectTask }: P
           onClose={() => setIsCreatingExpediente(false)} 
         />
       )}
+
+      {/* BARRA FLOTANTE DE ACCIONES MASIVAS */}
+      <BulkTaskActionBar
+        selectedTaskIds={selectedTaskIds}
+        tasks={tareas}
+        concejaliasList={concejaliasList}
+        onClearSelection={() => setSelectedTaskIds([])}
+        onSelectAll={() => {
+          if (selectedTaskIds.length === filteredTareas.length) {
+            setSelectedTaskIds([]);
+          } else {
+            setSelectedTaskIds(filteredTareas.map(t => t.id!).filter(Boolean));
+          }
+        }}
+        isAllSelected={filteredTareas.length > 0 && selectedTaskIds.length === filteredTareas.length}
+      />
     </div>
   );
 }

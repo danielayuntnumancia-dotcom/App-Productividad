@@ -3,6 +3,8 @@ import { collection, query, where, onSnapshot, doc, writeBatch, updateDoc, delet
 import { db } from '../firebaseConfig';
 import { Project, Tarea, TaskStatus } from '../types';
 import CustomDatePicker from './CustomDatePicker';
+import MacroExpedienteModal from './MacroExpedienteModal';
+import BulkTaskActionBar from './BulkTaskActionBar';
 import { useConcejalias } from '../hooks/useConcejalias';
 import { getConcejaliaStyle } from '../utils/concejaliaColors';
 import { exportExpedientToPDF, exportExpedientToCSV, sortExpedientTasksNaturally, copyExpedientTasksToClipboard } from '../utils/exportUtils';
@@ -22,7 +24,10 @@ export default function ExpedienteDetailPanel({ project, onClose }: Props) {
   const [notas, setNotas] = useState(project.notas || project.notes || '');
   const [projectStatus, setProjectStatus] = useState<'active' | 'completed' | 'archived'>(project.status || 'active');
   const [existingProjects, setExistingProjects] = useState<{ id: string; name: string; code: string }[]>([]);
+  const [childProjects, setChildProjects] = useState<Project[]>([]);
   const [tasks, setTasks] = useState<Tarea[]>([]);
+  const [isAddingCMModalOpen, setIsAddingCMModalOpen] = useState(false);
+  const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
 
   // Estados para modificar títulos, minutos y estados de las tareas pendientes existentes
   const [editedTitles, setEditedTitles] = useState<Record<string, string>>({});
@@ -83,6 +88,29 @@ export default function ExpedienteDetailPanel({ project, onClose }: Props) {
 
     return () => unsub();
   }, [project?.userId, project?.id]);
+
+  // Escuchar sub-contratos menores si este proyecto es un Macro-Expediente
+  useEffect(() => {
+    if (!project?.id || !project?.userId) return;
+
+    const q = query(
+      collection(db, 'tareas'),
+      where('userId', '==', project.userId),
+      where('isProject', '==', true),
+      where('parentProjectId', '==', project.id)
+    );
+
+    const unsub = onSnapshot(q, (snapshot) => {
+      const list: Project[] = [];
+      snapshot.forEach((d) => {
+        const data = d.data();
+        list.push({ id: data.projectId || data.id || d.id, ...data } as Project);
+      });
+      setChildProjects(list);
+    });
+
+    return () => unsub();
+  }, [project?.id, project?.userId]);
 
   // Escuchar en tiempo real las tareas del expediente
   useEffect(() => {
@@ -328,32 +356,53 @@ export default function ExpedienteDetailPanel({ project, onClose }: Props) {
           </button>
         </div>
 
-        {/* Fila 2: Barra de herramientas de exportación sin solapamiento */}
-        <div className="flex items-center gap-2 pt-1 border-t border-slate-200/50 dark:border-slate-700/50 flex-wrap">
-          <button
-            type="button"
-            onClick={() => exportExpedientToPDF(project, tasks)}
-            className="px-2.5 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100 font-bold text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
-            title="Exportar informe en formato PDF listo para imprimir"
-          >
-            <span>📄 PDF</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => exportExpedientToCSV(project, tasks)}
-            className="px-2.5 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 font-bold text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
-            title="Exportar hoja de datos compatible con Microsoft Excel"
-          >
-            <span>📊 Excel</span>
-          </button>
-          <button
-            type="button"
-            onClick={handleCopyTextList}
-            className="px-2.5 py-1.5 rounded-xl bg-amber-50 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 hover:bg-amber-100 font-bold text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
-            title="Copiar lista de tareas formateada para enviar por WhatsApp o Email"
-          >
-            <span>📋 Copiar Texto</span>
-          </button>
+        {/* Fila 2: Barra de herramientas de exportación y acciones rápidas */}
+        <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-200/50 dark:border-slate-700/50 flex-wrap">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <button
+              type="button"
+              onClick={() => exportExpedientToPDF(project, tasks)}
+              className="px-2.5 py-1 rounded-xl bg-indigo-50 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-100 font-bold text-xs transition-colors flex items-center gap-1 cursor-pointer"
+              title="Exportar informe en formato PDF listo para imprimir"
+            >
+              <span>📄 PDF</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => exportExpedientToCSV(project, tasks)}
+              className="px-2.5 py-1 rounded-xl bg-emerald-50 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 font-bold text-xs transition-colors flex items-center gap-1 cursor-pointer"
+              title="Exportar hoja de datos compatible con Microsoft Excel"
+            >
+              <span>📊 Excel</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleCopyTextList}
+              className="px-2.5 py-1 rounded-xl bg-amber-50 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 hover:bg-amber-100 font-bold text-xs transition-colors flex items-center gap-1 cursor-pointer"
+              title="Copiar lista de tareas formateada para enviar por WhatsApp o Email"
+            >
+              <span>📋 Copiar</span>
+            </button>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            {(project.isMacroProject || project.type === 'macro_expediente' || childProjects.length > 0) && (
+              <button
+                type="button"
+                onClick={() => setIsAddingCMModalOpen(true)}
+                className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1 cursor-pointer"
+              >
+                <span>➕</span> Contrato
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setIsAddingTask(!isAddingTask)}
+              className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1 cursor-pointer"
+            >
+              <span>➕</span> Tarea
+            </button>
+          </div>
         </div>
       </div>
 
@@ -472,16 +521,58 @@ export default function ExpedienteDetailPanel({ project, onClose }: Props) {
           </p>
         </div>
 
+        {/* SECCIÓN SUB-CONTRATOS MENORES SI ES MACRO-EXPEDIENTE */}
+        {(project.isMacroProject || project.type === 'macro_expediente' || childProjects.length > 0) && (
+          <div className="p-4 bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/60 rounded-2xl space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="text-xs font-bold uppercase tracking-wider text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
+                  <span>📜</span> Sub-Contratos Menores ({childProjects.length})
+                </h4>
+                <p className="text-[11px] text-amber-700/80 dark:text-amber-400">
+                  Contratos menores asociados a este macro-expediente
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAddingCMModalOpen(true)}
+                className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1 cursor-pointer"
+              >
+                <span>➕</span> Añadir Contrato
+              </button>
+            </div>
+
+            {childProjects.length === 0 ? (
+              <p className="text-xs text-amber-800/60 dark:text-amber-400/60 italic py-2">
+                No hay sub-contratos menores vinculados todavía.
+              </p>
+            ) : (
+              <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                {childProjects.map((cm) => (
+                  <div key={cm.id} className="p-2.5 bg-white dark:bg-slate-800 border border-amber-200/80 dark:border-slate-700 rounded-xl flex items-center justify-between text-xs">
+                    <span className="font-bold text-slate-800 dark:text-slate-200 truncate flex items-center gap-1.5">
+                      <span>📜</span> {cm.name}
+                    </span>
+                    <span className="font-mono text-[11px] font-bold text-amber-700 dark:text-amber-300 shrink-0">
+                      {cm.expedientCode}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* SECCIÓN INTERACTIVA DE TAREAS DEL EXPEDIENTE */}
         <div className="pt-2 space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+          <div className="sticky top-0 z-10 bg-white/95 dark:bg-slate-800/95 backdrop-blur-md py-2.5 px-3 -mx-3 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between rounded-xl shadow-xs">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">
               Tareas del Expediente ({tasks.length})
             </span>
             <button
               type="button"
               onClick={() => setIsAddingTask(!isAddingTask)}
-              className="px-3 py-1 bg-indigo-50 dark:bg-indigo-900/30 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 text-indigo-600 dark:text-indigo-300 text-xs font-bold rounded-lg border border-indigo-200 dark:border-indigo-800/50 transition-colors flex items-center gap-1 cursor-pointer"
+              className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg shadow-xs transition-colors flex items-center gap-1 cursor-pointer"
             >
               <span>{isAddingTask ? '✕ Cancelar' : '+ Añadir Tarea'}</span>
             </button>
@@ -535,14 +626,39 @@ export default function ExpedienteDetailPanel({ project, onClose }: Props) {
               const currentTitle = editedTitles[t.id] !== undefined ? editedTitles[t.id] : (t.title || t.titulo);
               const currentMin = editedMinutes[t.id] !== undefined ? editedMinutes[t.id] : (t.estimatedTimeMin || 15);
               const currentStatus = editedStatuses[t.id] !== undefined ? editedStatuses[t.id] : (t.status || 'todo');
+              const isSelected = !!t.id && selectedTaskIds.includes(t.id);
 
               return (
                 <div 
                   key={t.id || idx}
-                  className="p-3 bg-slate-50 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-700 rounded-xl space-y-2"
+                  className={`p-3 border rounded-xl space-y-2 transition-all ${
+                    isSelected
+                      ? 'bg-indigo-50/90 dark:bg-indigo-950/40 border-indigo-500 ring-2 ring-indigo-500/30'
+                      : 'bg-slate-50 dark:bg-slate-900/60 border-slate-200/80 dark:border-slate-700'
+                  }`}
                 >
-                  {/* Fila 1: Número + Título Completo + Papelera */}
+                  {/* Fila 1: Checkbox + Número + Título Completo + Papelera */}
                   <div className="flex items-center gap-2 w-full">
+                    {/* Checkbox de Selección Masiva */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (!t.id) return;
+                        setSelectedTaskIds(prev =>
+                          prev.includes(t.id!) ? prev.filter(id => id !== t.id) : [...prev, t.id!]
+                        );
+                      }}
+                      className={`w-4 h-4 rounded border flex items-center justify-center text-[9px] font-black transition-all cursor-pointer shrink-0 ${
+                        isSelected
+                          ? 'bg-indigo-600 border-indigo-600 text-white shadow-xs'
+                          : 'border-slate-300 dark:border-slate-600 bg-white/80 dark:bg-slate-800 text-transparent hover:border-indigo-400'
+                      }`}
+                      title={isSelected ? 'Desmarcar tarea' : 'Seleccionar para edición en masa'}
+                    >
+                      ✓
+                    </button>
+
                     <span className="w-5 h-5 rounded-full bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 font-bold flex items-center justify-center shrink-0 text-xs">
                       {idx + 1}
                     </span>
@@ -630,6 +746,31 @@ export default function ExpedienteDetailPanel({ project, onClose }: Props) {
           <span>Eliminar Expediente Completo</span>
         </button>
       </div>
+
+      {/* MODAL DE ADICIÓN DE CONTRATOS MENORES AL MACRO */}
+      {isAddingCMModalOpen && (
+        <MacroExpedienteModal
+          user={{ uid: project.userId || '' } as any}
+          onClose={() => setIsAddingCMModalOpen(false)}
+          existingMacroProject={project}
+        />
+      )}
+
+      {/* BARRA FLOTANTE DE ACCIONES MASIVAS */}
+      <BulkTaskActionBar
+        selectedTaskIds={selectedTaskIds}
+        tasks={tasks}
+        concejaliasList={concejaliasList}
+        onClearSelection={() => setSelectedTaskIds([])}
+        onSelectAll={() => {
+          if (selectedTaskIds.length === tasks.length) {
+            setSelectedTaskIds([]);
+          } else {
+            setSelectedTaskIds(tasks.map(t => t.id!).filter(Boolean));
+          }
+        }}
+        isAllSelected={tasks.length > 0 && selectedTaskIds.length === tasks.length}
+      />
 
     </div>
   );

@@ -5,7 +5,9 @@ import { Tarea, Project } from '../types';
 import { User } from 'firebase/auth';
 import TaskCreateModal from './TaskCreateModal';
 import TemplateSelectorModal from './TemplateSelectorModal';
+import BulkTaskActionBar from './BulkTaskActionBar';
 import { getConcejaliaStyle, getConcejaliaBg, getPriorityStyle, getPriorityBadgeClass } from '../utils/concejaliaColors';
+import { useConcejalias } from '../hooks/useConcejalias';
 
 interface Props {
   user: User;
@@ -17,11 +19,13 @@ interface Props {
 type MiDiaStatusFilter = 'todas' | 'todo' | 'in_progress' | 'waiting_on_third_party';
 
 export default function MiDiaView({ user, searchQuery = '', onSelectTask, onSelectProject }: Props) {
+  const concejaliasList = useConcejalias(user.uid);
   const [tareas, setTareas] = useState<Tarea[]>([]);
   const [expandedExpedientes, setExpandedExpedientes] = useState<Set<string>>(new Set());
   const [isCreatingTask, setIsCreatingTask] = useState(false);
   const [isCreatingExpediente, setIsCreatingExpediente] = useState(false);
   const [filterStatus, setFilterStatus] = useState<MiDiaStatusFilter>('todas');
+  const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
 
   useEffect(() => {
     const q = query(
@@ -230,12 +234,15 @@ export default function MiDiaView({ user, searchQuery = '', onSelectTask, onSele
   const renderTaskCard = (tarea: Tarea) => {
     const rawDueDate = tarea.dueDate || tarea.fecha_vencimiento;
     const isOverdue = !!rawDueDate && rawDueDate < Date.now() && tarea.status !== 'completed' && !tarea.completada;
+    const isSelected = !!tarea.id && selectedTaskIds.includes(tarea.id);
 
-    const cardStyle = isOverdue 
-      ? 'bg-red-50 border-red-500 dark:bg-red-900/20 dark:border-red-500/80' 
-      : (tarea.status === 'in_progress'
-          ? 'bg-indigo-50/80 border-indigo-500 dark:bg-indigo-900/10 dark:border-indigo-500 shadow-indigo-100 dark:shadow-none'
-          : getPriorityStyle(tarea.prioridad, (tarea as any).priority));
+    const cardStyle = isSelected
+      ? 'bg-indigo-50/90 dark:bg-indigo-950/40 border-indigo-500 dark:border-indigo-500 ring-2 ring-indigo-500/30 shadow-md'
+      : (isOverdue 
+          ? 'bg-red-50 border-red-500 dark:bg-red-900/20 dark:border-red-500/80' 
+          : (tarea.status === 'in_progress'
+              ? 'bg-indigo-50/80 border-indigo-500 dark:bg-indigo-900/10 dark:border-indigo-500 shadow-indigo-100 dark:shadow-none'
+              : getPriorityStyle(tarea.prioridad, (tarea as any).priority)));
 
     const statusBadge = getStatusBadge(tarea.status, tarea.blockedBy);
 
@@ -246,7 +253,28 @@ export default function MiDiaView({ user, searchQuery = '', onSelectTask, onSele
         className={`rounded-2xl border shadow-sm flex items-stretch group hover:shadow-md transition-all duration-300 cursor-pointer overflow-hidden ${cardStyle}`}
         onClick={() => onSelectTask(tarea)}
       >
-        <div className={`w-12 sm:w-16 flex items-start justify-center pt-4 shrink-0 transition-colors ${getConcejaliaBg(tarea.concejalia)}`}>
+        <div className={`w-12 sm:w-16 flex flex-col items-center justify-between py-3.5 shrink-0 transition-colors ${getConcejaliaBg(tarea.concejalia)}`}>
+          {/* Checkbox de Selección Masiva */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (!tarea.id) return;
+              setSelectedTaskIds(prev =>
+                prev.includes(tarea.id!) ? prev.filter(id => id !== tarea.id) : [...prev, tarea.id!]
+              );
+            }}
+            className={`w-5 h-5 rounded-md border flex items-center justify-center text-[10px] font-black transition-all cursor-pointer ${
+              isSelected
+                ? 'bg-white text-indigo-700 border-white shadow-xs'
+                : 'border-white/60 bg-black/10 text-transparent hover:border-white hover:bg-black/20'
+            }`}
+            title={isSelected ? 'Desmarcar tarea' : 'Seleccionar para edición en masa'}
+          >
+            ✓
+          </button>
+
+          {/* Botón de Completar */}
           <button 
             onClick={(e) => { e.stopPropagation(); handleCompleteTask(tarea.id!); }}
             className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
@@ -254,6 +282,7 @@ export default function MiDiaView({ user, searchQuery = '', onSelectTask, onSele
                 ? 'border-white/60 hover:border-white text-white'
                 : 'border-slate-300 dark:border-slate-600 hover:border-indigo-500 dark:hover:border-indigo-400 text-indigo-600 dark:text-indigo-400'
             }`}
+            title="Marcar como completada"
           >
             <svg className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>
           </button>
@@ -603,6 +632,22 @@ export default function MiDiaView({ user, searchQuery = '', onSelectTask, onSele
           onClose={() => setIsCreatingExpediente(false)} 
         />
       )}
+
+      {/* BARRA FLOTANTE DE ACCIONES MASIVAS */}
+      <BulkTaskActionBar
+        selectedTaskIds={selectedTaskIds}
+        tasks={tareas}
+        concejaliasList={concejaliasList}
+        onClearSelection={() => setSelectedTaskIds([])}
+        onSelectAll={() => {
+          if (selectedTaskIds.length === tareas.length) {
+            setSelectedTaskIds([]);
+          } else {
+            setSelectedTaskIds(tareas.map(t => t.id!).filter(Boolean));
+          }
+        }}
+        isAllSelected={tareas.length > 0 && selectedTaskIds.length === tareas.length}
+      />
     </div>
   );
 }

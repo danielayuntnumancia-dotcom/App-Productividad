@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, onSnapshot, doc, writeBatch, serverTimestamp } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, writeBatch, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 import { User } from 'firebase/auth';
-import { EXPEDIENT_TEMPLATES } from '../constants/templates';
 import { ExpedienteTemplate, generateExpedientCode } from '../types';
 import ExpedienteBuilderModal from './ExpedienteBuilderModal';
 import { getConcejaliaStyle } from '../utils/concejaliaColors';
 import { useConcejalias } from '../hooks/useConcejalias';
+import { useUserTemplates } from '../hooks/useUserTemplates';
+import { cleanTaskTitle } from '../utils/taskNumbering';
 
 interface Props {
   user: User;
@@ -15,17 +16,26 @@ interface Props {
 
 export default function TemplateSelectorModal({ user, onClose }: Props) {
   const concejaliasList = useConcejalias(user.uid);
-  const [firestoreTemplates, setFirestoreTemplates] = useState<ExpedienteTemplate[]>([]);
-  const [allTemplates, setAllTemplates] = useState<ExpedienteTemplate[]>(EXPEDIENT_TEMPLATES);
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string>(EXPEDIENT_TEMPLATES[0].id);
+  const { allTemplates, deleteTemplate } = useUserTemplates(user.uid);
+
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
   const [selectedConcejalia, setSelectedConcejalia] = useState<string>('');
   const [nombreProyecto, setNombreProyecto] = useState('');
   const [existingProjects, setExistingProjects] = useState<{ id: string; name: string; code: string }[]>([]);
   const [selectedLinkedProjectId, setSelectedLinkedProjectId] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [showBuilder, setShowBuilder] = useState(false);
+  const [builderMode, setBuilderMode] = useState<'create_expediente' | 'edit_template' | 'create_template'>('create_expediente');
+  const [editingTemplate, setEditingTemplate] = useState<ExpedienteTemplate | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Seleccionar la primera plantilla (la predeterminada si existe) cuando cargue la lista
+  useEffect(() => {
+    if (allTemplates.length > 0 && (!selectedTemplateId || !allTemplates.some(t => t.id === selectedTemplateId))) {
+      setSelectedTemplateId(allTemplates[0].id);
+    }
+  }, [allTemplates, selectedTemplateId]);
 
   // Escuchar expedientes existentes para vinculación cruzada
   useEffect(() => {
@@ -60,39 +70,6 @@ export default function TemplateSelectorModal({ user, onClose }: Props) {
     return () => unsub();
   }, [user.uid]);
 
-  // Escuchar las plantillas guardadas en la colección autorizada 'tareas'
-  useEffect(() => {
-    const q = query(
-      collection(db, 'tareas'),
-      where('userId', '==', user.uid),
-      where('isTemplate', '==', true)
-    );
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const dbTemplates: ExpedienteTemplate[] = [];
-      snapshot.forEach((d) => {
-        const data = d.data();
-        dbTemplates.push({
-          id: d.id,
-          name: data.name,
-          concejalia: data.concejalia || 'General',
-          concejaliaId: data.concejaliaId || '',
-          tasks: data.tasks || []
-        });
-      });
-
-      setFirestoreTemplates(dbTemplates);
-      
-      const merged = dbTemplates.length > 0 ? [...dbTemplates, ...EXPEDIENT_TEMPLATES] : EXPEDIENT_TEMPLATES;
-      setAllTemplates(merged);
-      if (merged.length > 0 && !merged.some(t => t.id === selectedTemplateId)) {
-        setSelectedTemplateId(merged[0].id);
-      }
-    });
-
-    return () => unsubscribe();
-  }, [user.uid]);
-
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -101,13 +78,32 @@ export default function TemplateSelectorModal({ user, onClose }: Props) {
     return () => window.removeEventListener('keydown', handleEsc);
   }, [onClose]);
 
-  const selectedTemplate = allTemplates.find(t => t.id === selectedTemplateId) || allTemplates[0] || EXPEDIENT_TEMPLATES[0];
+  const selectedTemplate = allTemplates.find(t => t.id === selectedTemplateId) || allTemplates[0];
 
   useEffect(() => {
     if (selectedTemplate) {
       setSelectedConcejalia(selectedTemplate.concejalia || selectedTemplate.masterCategory || concejaliasList[0] || 'General');
     }
-  }, [selectedTemplateId, concejaliasList]);
+  }, [selectedTemplateId, concejaliasList, selectedTemplate]);
+
+  const handleDeleteTemplate = async (template: ExpedienteTemplate, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const confirmMessage = template.isCustom
+      ? `¿Eliminar la plantilla "${template.name}" de forma permanente?`
+      : `¿Eliminar la plantilla de fábrica "${template.name}" de tu catálogo?`;
+
+    if (!window.confirm(confirmMessage)) return;
+
+    try {
+      await deleteTemplate(template);
+      setSuccessMessage(`Plantilla "${template.name}" eliminada correctamente.`);
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (err: any) {
+      console.error("Error deleting template: ", err);
+      setErrorMessage(err?.message || "Error al eliminar la plantilla.");
+      setTimeout(() => setErrorMessage(null), 3000);
+    }
+  };
 
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -150,6 +146,10 @@ export default function TemplateSelectorModal({ user, onClose }: Props) {
       const tareasRef = collection(db, 'tareas');
 
       selectedTemplate.tasks.forEach((task, index) => {
+        const clean = cleanTaskTitle(task.title);
+        const indexedTitle = `${index + 1}. ${clean}`;
+        const fullExpTitle = `${indexedTitle} - ${projName}`;
+
         const newTaskRef = doc(tareasRef);
         batch.set(newTaskRef, {
           projectId: generatedProjectId,
@@ -162,10 +162,10 @@ export default function TemplateSelectorModal({ user, onClose }: Props) {
           templateId: selectedTemplate.id,
           isContratoMenor: isCM,
           orderIndex: index + 1,
-          title: task.title,
-          titulo: `${task.title} - ${projName}`,
-          notes: task.notes || selectedTemplate.description || '',
-          notas: task.notes || selectedTemplate.description || '',
+          title: indexedTitle,
+          titulo: fullExpTitle,
+          notes: task.notes || selectedTemplate.descripcion || selectedTemplate.description || '',
+          notas: task.notes || selectedTemplate.descripcion || selectedTemplate.description || '',
           status: task.status,
           completada: task.status === 'completed',
           estimatedTimeMin: task.estimatedTimeMin,
@@ -217,8 +217,8 @@ export default function TemplateSelectorModal({ user, onClose }: Props) {
               </svg>
             </div>
             <div>
-              <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">Nuevo Expediente en Lote</h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400">Genera múltiples tareas mediante plantillas automatizadas</p>
+              <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">Plantillas de Expedientes</h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Genera lotes de tareas o administra y edita tus plantillas</p>
             </div>
           </div>
           <button 
@@ -254,19 +254,36 @@ export default function TemplateSelectorModal({ user, onClose }: Props) {
           
           <div className="flex-1 overflow-y-auto p-6 space-y-6">
             
-            {/* BOTÓN CONSTRUCTOR DINÁMICO */}
-            <div className="p-4 bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-pink-500/10 dark:from-indigo-900/30 dark:to-purple-900/30 border border-indigo-200 dark:border-indigo-800 rounded-2xl flex items-center justify-between gap-3">
+            {/* BOTONES DE ACCIÓN: CONSTRUCTOR Y NUEVA PLANTILLA */}
+            <div className="p-4 bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-pink-500/10 dark:from-indigo-900/30 dark:to-purple-900/30 border border-indigo-200 dark:border-indigo-800 rounded-2xl flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
               <div>
-                <h4 className="text-xs font-bold text-indigo-900 dark:text-indigo-200">¿Necesitas un expediente a medida?</h4>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400">Diseña tareas dinámicas y guarda plantillas en Firestore</p>
+                <h4 className="text-xs font-bold text-indigo-900 dark:text-indigo-200">Personaliza y Crea Plantillas</h4>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">Edita plantillas existentes con el icono ✏️ o crea nuevas</p>
               </div>
-              <button
-                type="button"
-                onClick={() => setShowBuilder(true)}
-                className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all shrink-0 cursor-pointer flex items-center gap-1.5"
-              >
-                <span>⚡ Abrir Constructor</span>
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingTemplate(null);
+                    setBuilderMode('create_template');
+                    setShowBuilder(true);
+                  }}
+                  className="px-3 py-2 bg-white dark:bg-slate-800 border border-indigo-300 dark:border-indigo-700 hover:bg-indigo-50 dark:hover:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer flex items-center gap-1"
+                >
+                  <span>➕ Nueva Plantilla</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingTemplate(null);
+                    setBuilderMode('create_expediente');
+                    setShowBuilder(true);
+                  }}
+                  className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all cursor-pointer flex items-center gap-1"
+                >
+                  <span>⚡ Expediente a Medida</span>
+                </button>
+              </div>
             </div>
 
             {/* Master Category / Concejalía Template Selection */}
@@ -290,27 +307,75 @@ export default function TemplateSelectorModal({ user, onClose }: Props) {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                       {categoryTemplates.map(t => {
                         const isSelected = t.id === selectedTemplateId;
+                        const isCustom = !!t.isCustom;
+
                         return (
-                          <button
+                          <div
                             key={t.id}
-                            type="button"
                             onClick={() => setSelectedTemplateId(t.id)}
-                            className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-1.5 ${
+                            className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-2 relative ${
                               isSelected
                                 ? 'bg-indigo-50/80 dark:bg-indigo-900/40 border-indigo-500 dark:border-indigo-500 ring-2 ring-indigo-500/20 text-indigo-950 dark:text-indigo-100 shadow-sm'
                                 : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-600'
                             }`}
                           >
-                            <div className="flex items-center justify-between">
-                              <span className="font-bold text-sm truncate">{t.name}</span>
-                              {isSelected && (
-                                <span className="w-2 h-2 rounded-full bg-indigo-600 dark:bg-indigo-400"></span>
-                              )}
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="font-bold text-sm truncate">{t.name}</span>
+                                  {t.isDefault && (
+                                    <span className="text-[9px] font-black uppercase px-1.5 py-0.5 bg-amber-500 text-white rounded shrink-0">
+                                      ⭐ Defecto
+                                    </span>
+                                  )}
+                                  {isCustom && (
+                                    <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 rounded border border-indigo-200 dark:border-indigo-800 shrink-0">
+                                      Guardada
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="text-xs text-slate-500 dark:text-slate-400 font-medium block mt-0.5">
+                                  {t.tasks.length} tareas automatizadas
+                                </span>
+                              </div>
+
+                              {/* Acciones de Edición / Eliminación sobre la tarjeta */}
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setEditingTemplate(t);
+                                    setBuilderMode('edit_template');
+                                    setShowBuilder(true);
+                                  }}
+                                  className="w-7 h-7 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/40 transition-all cursor-pointer"
+                                  title="Editar plantilla guardada"
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                  </svg>
+                                </button>
+
+                                {isCustom && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => handleDeleteTemplate(t, e)}
+                                    className="w-7 h-7 flex items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/40 transition-all cursor-pointer"
+                                    title="Eliminar plantilla"
+                                  >
+                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                    </svg>
+                                  </button>
+                                )}
+
+                                {isSelected && (
+                                  <span className="w-2 h-2 rounded-full bg-indigo-600 dark:bg-indigo-400 ml-1"></span>
+                                )}
+                              </div>
                             </div>
-                            <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-                              {t.tasks.length} tareas automatizadas
-                            </span>
-                          </button>
+                          </div>
                         );
                       })}
                     </div>
@@ -375,28 +440,31 @@ export default function TemplateSelectorModal({ user, onClose }: Props) {
                 Tareas a generar automáticamente en lote ({selectedTemplate.tasks.length}):
               </span>
               <div className="space-y-2">
-                {selectedTemplate.tasks.map((task, idx) => (
-                  <div key={idx} className="flex items-center justify-between p-2.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 text-xs">
-                    <div className="flex items-center gap-2 truncate">
-                      <span className="w-5 h-5 rounded-full bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 font-bold flex items-center justify-center shrink-0">
-                        {idx + 1}
-                      </span>
-                      <span className="font-semibold text-slate-800 dark:text-slate-200 truncate">
-                        {task.title} {nombreProyecto.trim() ? `- ${nombreProyecto.trim()}` : ''}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      {task.blockedBy && (
-                        <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 font-semibold">
-                          Retenido: {task.blockedBy}
+                {selectedTemplate.tasks.map((task, idx) => {
+                  const clean = cleanTaskTitle(task.title);
+                  return (
+                    <div key={idx} className="flex items-center justify-between p-2.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 text-xs">
+                      <div className="flex items-center gap-2 truncate">
+                        <span className="w-5 h-5 rounded-full bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 font-bold flex items-center justify-center shrink-0">
+                          {idx + 1}
                         </span>
-                      )}
-                      <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300 font-medium">
-                        {task.estimatedTimeMin} min
-                      </span>
+                        <span className="font-semibold text-slate-800 dark:text-slate-200 truncate">
+                          {idx + 1}. {clean} {nombreProyecto.trim() ? `- ${nombreProyecto.trim()}` : ''}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {task.blockedBy && (
+                          <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 font-semibold">
+                            Retenido: {task.blockedBy}
+                          </span>
+                        )}
+                        <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300 font-medium">
+                          {task.estimatedTimeMin} min
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
 
@@ -407,7 +475,7 @@ export default function TemplateSelectorModal({ user, onClose }: Props) {
             <button 
               type="button"
               onClick={onClose}
-              className="px-5 py-2.5 rounded-xl font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+              className="px-5 py-2.5 rounded-xl font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors cursor-pointer"
             >
               Cancelar
             </button>
@@ -436,7 +504,21 @@ export default function TemplateSelectorModal({ user, onClose }: Props) {
       </div>
 
       {showBuilder && (
-        <ExpedienteBuilderModal user={user} onClose={() => { setShowBuilder(false); onClose(); }} />
+        <ExpedienteBuilderModal 
+          user={user}
+          templateToEdit={editingTemplate}
+          mode={builderMode}
+          onClose={() => { 
+            setShowBuilder(false); 
+            setEditingTemplate(null);
+            setBuilderMode('create_expediente');
+          }}
+          onTemplateSaved={(saved) => {
+            if (saved?.id) {
+              setSelectedTemplateId(saved.id);
+            }
+          }}
+        />
       )}
     </div>
   );

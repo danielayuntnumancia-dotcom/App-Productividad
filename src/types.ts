@@ -36,6 +36,9 @@ export interface Tarea {
   projectConcejalia?: string;
   expedientCode?: string;
   linkedExpedientId?: string;
+  parentProjectId?: string;
+  parentProjectName?: string;
+  isContratoMenor?: boolean;
   orderIndex?: number;
 }
 
@@ -47,10 +50,14 @@ export interface Project {
   status: 'active' | 'completed' | 'archived';
   expedientCode?: string;
   linkedExpedientId?: string;
+  isContratoMenor?: boolean;
+  isMacroProject?: boolean;
+  parentProjectId?: string;
+  parentProjectName?: string;
   notes?: string;
   notas?: string;
   createdAt?: any;
-  userId: string;
+  userId?: string;
 }
 
 export const generateExpedientCode = (): string => {
@@ -66,6 +73,7 @@ export const generateExpedientCode = (): string => {
 export interface TemplateTask {
   title: string;
   notes?: string;
+  notas?: string;
   estimatedTimeMin: number;
   status: TaskStatus;
   blockedBy?: string;
@@ -80,7 +88,10 @@ export interface ExpedienteTemplate {
   concejaliaId?: string;
   masterCategory?: string;
   descripcion?: string;
+  description?: string;
   tasks: TemplateTask[];
+  isCustom?: boolean;
+  isDefault?: boolean;
 }
 
 export interface ConcejaliaItem {

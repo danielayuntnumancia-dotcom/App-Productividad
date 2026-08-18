@@ -4,6 +4,9 @@ import { db } from '../firebaseConfig';
 import { User } from 'firebase/auth';
 import { Tarea, Project } from '../types';
 import ExpedienteBuilderModal from './ExpedienteBuilderModal';
+import MacroExpedienteModal from './MacroExpedienteModal';
+import BulkTaskActionBar from './BulkTaskActionBar';
+import { useConcejalias } from '../hooks/useConcejalias';
 import { getConcejaliaStyle, getPriorityStyle, getPriorityBadgeClass } from '../utils/concejaliaColors';
 import { exportExpedientToPDF, exportExpedientToCSV, copyExpedientTasksToClipboard, exportConcejaliaReportToPDF, exportConcejaliaReportToCSV } from '../utils/exportUtils';
 
@@ -17,10 +20,13 @@ interface Props {
 type CMStatusFilter = 'todos' | 'activos' | 'completados';
 
 export default function ContratosMenoresView({ user, searchQuery = '', onSelectTask, onSelectProject }: Props) {
+  const concejaliasList = useConcejalias(user.uid);
   const [projects, setProjects] = useState<Project[]>([]);
   const [allTareas, setAllTareas] = useState<Tarea[]>([]);
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
   const [isCreatingBuilder, setIsCreatingBuilder] = useState(false);
+  const [isMacroModalOpen, setIsMacroModalOpen] = useState(false);
+  const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
 
   // Filtros
   const [concejaliaFilter, setConcejaliaFilter] = useState<string>('todas');
@@ -202,12 +208,14 @@ export default function ContratosMenoresView({ user, searchQuery = '', onSelectT
   };
 
   const getTaskSortOrder = (t: Tarea): number => {
+    if (typeof t.orderIndex === 'number' && !isNaN(t.orderIndex) && t.orderIndex > 0) {
+      return t.orderIndex;
+    }
     const text = t.title || t.titulo || '';
     const match = text.match(/^(\d+)[\.\s]/);
     if (match) {
       return parseInt(match[1], 10);
     }
-    if (typeof t.orderIndex === 'number') return t.orderIndex;
     return 9999;
   };
 
@@ -260,10 +268,17 @@ export default function ContratosMenoresView({ user, searchQuery = '', onSelectT
           </button>
 
           <button 
+            onClick={() => setIsMacroModalOpen(true)}
+            className="px-4 py-2 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-700 hover:to-amber-600 text-white font-semibold text-xs rounded-xl shadow-md hover:shadow-lg transition-all duration-200 flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
+          >
+            <span>📦</span> Nuevo Lote / Macro
+          </button>
+
+          <button 
             onClick={() => setIsCreatingBuilder(true)}
             className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs rounded-xl shadow-md hover:shadow-lg transition-all duration-200 flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
           >
-            <span>⚡</span> Nuevo Contrato Menor
+            <span>⚡</span> Nuevo Contrato Individual
           </button>
         </div>
       </section>
@@ -332,12 +347,12 @@ export default function ContratosMenoresView({ user, searchQuery = '', onSelectT
                 data-project-card="true"
                 className={`bg-white dark:bg-slate-800 border-t border-r border-b border-slate-200 dark:border-slate-700/80 border-l-4 ${cStyle.borderL} rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-200`}
               >
-                {/* CABECERA CONTRATO MENOR (Estructura Anti-Solapamientos) */}
+                {/* CABECERA CONTRATO MENOR */}
                 <div
                   onClick={() => toggleProject(project.id!)}
                   className="p-4 sm:p-5 flex flex-col gap-3 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors"
                 >
-                  {/* Fila 1: Título completo, código EXP y estado a 100% de ancho */}
+                  {/* Fila 1: Título completo, código EXP y estado */}
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-start gap-2.5 min-w-0 flex-1">
                       <button className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0 mt-0.5">
@@ -387,6 +402,11 @@ export default function ContratosMenoresView({ user, searchQuery = '', onSelectT
                           <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${cStyle.badgeClass}`}>
                             {project.concejalia || 'Economía y Hacienda'}
                           </span>
+                          {project.parentProjectName && (
+                            <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded-md border border-amber-200 dark:border-amber-800/50">
+                              📦 Macro: {project.parentProjectName}
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -479,18 +499,41 @@ export default function ContratosMenoresView({ user, searchQuery = '', onSelectT
                         {projectTasks.map((tarea) => {
                           const isCompleted = tarea.status === 'completed' || !!tarea.completada;
                           const taskNote = tarea.notas || tarea.notes;
+                          const isSelected = !!tarea.id && selectedTaskIds.includes(tarea.id);
 
                           return (
                             <div
                               key={tarea.id}
                               onClick={() => onSelectTask(tarea)}
                               className={`p-3 rounded-xl flex items-center justify-between gap-3 border transition-all shadow-2xs cursor-pointer ${
-                                isCompleted 
-                                  ? 'bg-white/60 dark:bg-slate-800/60 border-slate-100 dark:border-slate-700/60 opacity-70' 
-                                  : getPriorityStyle(tarea.prioridad, (tarea as any).priority)
+                                isSelected
+                                  ? 'bg-amber-50/90 dark:bg-amber-950/40 border-amber-500 ring-2 ring-amber-500/30'
+                                  : (isCompleted 
+                                      ? 'bg-white/60 dark:bg-slate-800/60 border-slate-100 dark:border-slate-700/60 opacity-70' 
+                                      : getPriorityStyle(tarea.prioridad, (tarea as any).priority))
                               }`}
                             >
                               <div className="flex items-center gap-3 min-w-0 flex-1">
+                                {/* Checkbox de Selección Masiva */}
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (!tarea.id) return;
+                                    setSelectedTaskIds(prev =>
+                                      prev.includes(tarea.id!) ? prev.filter(id => id !== tarea.id) : [...prev, tarea.id!]
+                                    );
+                                  }}
+                                  className={`w-4 h-4 rounded border flex items-center justify-center text-[9px] font-black transition-all cursor-pointer shrink-0 ${
+                                    isSelected
+                                      ? 'bg-amber-600 border-amber-600 text-white shadow-xs'
+                                      : 'border-slate-300 dark:border-slate-600 bg-white/80 dark:bg-slate-800 text-transparent hover:border-amber-400'
+                                  }`}
+                                  title={isSelected ? 'Desmarcar trámite' : 'Seleccionar para edición en masa'}
+                                >
+                                  ✓
+                                </button>
+
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -499,7 +542,7 @@ export default function ContratosMenoresView({ user, searchQuery = '', onSelectT
                                   className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
                                     isCompleted 
                                       ? 'bg-emerald-500 border-emerald-500 text-white' 
-                                      : 'border-slate-300 dark:border-slate-600 hover:border-indigo-500'
+                                      : 'border-slate-300 dark:border-slate-600 hover:border-amber-500'
                                   }`}
                                 >
                                   {isCompleted && (
@@ -547,12 +590,36 @@ export default function ContratosMenoresView({ user, searchQuery = '', onSelectT
         </div>
       )}
 
+      {/* MODAL DE MACRO-EXPEDIENTE */}
+      {isMacroModalOpen && (
+        <MacroExpedienteModal
+          user={user}
+          onClose={() => setIsMacroModalOpen(false)}
+        />
+      )}
+
       {isCreatingBuilder && (
         <ExpedienteBuilderModal
           user={user}
           onClose={() => setIsCreatingBuilder(false)}
         />
       )}
+
+      {/* BARRA FLOTANTE DE ACCIONES MASIVAS */}
+      <BulkTaskActionBar
+        selectedTaskIds={selectedTaskIds}
+        tasks={allTareas}
+        concejaliasList={concejaliasList}
+        onClearSelection={() => setSelectedTaskIds([])}
+        onSelectAll={() => {
+          if (selectedTaskIds.length === allTareas.length) {
+            setSelectedTaskIds([]);
+          } else {
+            setSelectedTaskIds(allTareas.map(t => t.id!).filter(Boolean));
+          }
+        }}
+        isAllSelected={allTareas.length > 0 && selectedTaskIds.length === allTareas.length}
+      />
     </div>
   );
 }
