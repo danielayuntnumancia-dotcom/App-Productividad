@@ -1,59 +1,77 @@
 # Estado del Proyecto - App de Productividad y Gestión Municipal por Expedientes
 
-**Última actualización:** 13 de Agosto de 2026  
-**Estado:** ✅ Estable, Compilado, Sincronizado nativo APK y Desplegado en Producción  
+**Última actualización:** 18 de Agosto de 2026  
+**Estado:** ✅ Estable, Compilado con 0 errores, Sincronizado en GitHub y Desplegado en Firebase Hosting  
 **Entorno de Producción:** [https://app-productividad-54955.web.app](https://app-productividad-54955.web.app)  
+**Repositorio GitHub:** [https://github.com/danielayuntnumancia-dotcom/App-Productividad.git](https://github.com/danielayuntnumancia-dotcom/App-Productividad.git)  
 
 ---
 
-## 🚀 Logros Recientes
+## 🚀 Logros de esta Sesión
 
-1. **Restauración e Intensificación del Sistema de Colores por Concejalía y por Prioridad (`concejaliaColors.ts`, `MiDiaView.tsx`, `RegistroView.tsx`, `ExpedientesView.tsx`, `ContratosMenoresView.tsx`):**
-   - **Centralización Cromática Domiciliada:** Creadas las funciones `getPriorityStyle` y `getPriorityBadgeClass` en `concejaliaColors.ts` para mapear unificadamente los niveles de prioridad:
-     - 🔴 **Alta / Urgente:** Fondo rojo claro con borde acentuado (`bg-red-50/90 border-red-300 dark:bg-red-950/30 dark:border-red-800/60`).
-     - 🟧 **Media:** Fondo ámbar cálido con borde naranja (`bg-amber-50/90 border-amber-300 dark:bg-amber-950/30 dark:border-amber-800/60`).
-     - 🟩 **Baja:** Fondo verde esmeralda con borde suave (`bg-emerald-50/90 border-emerald-300 dark:bg-emerald-950/30 dark:border-emerald-800/60`).
-   - **Badges de Prioridad Dinámicos:** Incorporadas insignias visuales (`🔴 Alta`, `🟧 Media`, `🟩 Baja`) en cada tarjeta de tarea en *Mi Día*, *Registro de Tareas*, *Expedientes* y *Contratos Menores*.
-   - **Detección Automática de Prioridad en Expedientes:** Las cabeceras de los expedientes analizan la máxima prioridad de sus trámites e ilustran automáticamente la insignia `🔴 Alta Prioridad`.
-   - **Restauración de Barras de Concejalía:** Aplicada la propiedad `borderL` (`border-l-4`) a los contenedores de expedientes y contratos menores, restaurando los bordes cromáticos identificativos por área municipal (*Economía y Hacienda, Medio Ambiente, Policía Local y Movilidad, Transporte, Entidades Urbanísticas, etc.*).
+1. **📦 Macro-Expedientes y Lotes de Contratos Menores (`MacroExpedienteModal.tsx`, `taskNumbering.ts`):**
+   - **Estructura Jerárquica en 3 Niveles:** Concejalía ➔ Macro-Expediente ➔ Sub-Contratos Menores ➔ Tareas Hijas del Procedimiento.
+   - **Generación Atómica por Lotes:** Creación en 1 clic de múltiples contratos menores a partir de pegado rápido de listas multilínea o agregación manual.
+   - **Inyección de Plantillas:** Cada contrato menor recibe automáticamente las tareas hijas de la plantilla de contratación seleccionada (Memoria, RC, 3 Presupuestos, Decreto, ADO), con numeración secuencial garantizada (`1.`, `2.`, `3.`).
+   - **Insignias Visuales:** Distintivos `📦 Macro: [Nombre]` y árbol visual interactivo con sangría y botones de acción rápida.
 
-2. **Sistema de Filtrado por Estado de Tareas y Expedientes (`RegistroView.tsx`, `ExpedientesView.tsx`, `MiDiaView.tsx`):**
-   - **Filtros Interactivos con Contadores en Vivo:** Implementadas barras de filtrado con pestañas y contadores dinámicos (*Todas*, *Pendientes*, *En Curso*, *⚠️ Retenidas por Terceros*, *Completadas*).
-   - **Filtrado Granular:** Permite aislar al instante las tareas que se encuentran bloqueadas por terceros (*Intervención, Contratación, Tesorería, etc.*) o las tareas en ejecución activa.
+2. **📋 Gestor Total de Plantillas y Plantillas Predeterminadas (`PlantillasView.tsx`, `useUserTemplates.ts`):**
+   - **Módulo Independiente:** Nueva vista accesible desde el menú lateral y móvil para crear, editar, duplicar, eliminar e inspeccionar plantillas.
+   - **Elección de Plantilla Predeterminada:** Posibilidad de marcar cualquier plantilla propia como predeterminada ⭐ y ocultar/eliminar las plantillas de fábrica obsoletas.
+   - **Copia de Seguridad:** Exportación e importación completa del catálogo de plantillas en formato JSON.
+   - **Constructor Rápido de Expedientes:** Creación de expedientes ordinarios y macro-expedientes directamente desde la tarjeta de la plantilla.
 
-3. **Revisión Integral de Maquetación Anti-Solapamientos en Tarjetas (`ExpedientesView.tsx`, `MiDiaView.tsx`, `ContratosMenoresView.tsx`):**
-   - **Solución al Ocultamiento de Títulos de Expedientes:** Reestructuradas todas las tarjetas de expedientes y contratos menores en 2 secciones diferenciadas. La sección 1 asigna el **100% del ancho disponible al nombre completo del expediente**, su código `EXP-2026-XXXX` y la concejalía en formato horizontal amplio, eliminando los textos verticales apretados.
-   - **Barra de Acciones Independiente:** Trasladados el contador de tareas (`0/4 tareas`), los botones de exportación (`PDF`, `XLS`, `TXT`) y los botones de edición/eliminación (`✏️`, `🗑️`) a una barra horizontal dedicada en la parte inferior de cada tarjeta.
+3. **⚡ Edición en Masa de Tareas (`BulkTaskActionBar.tsx`):**
+   - **Barra Flotante Inferior:** Barra emergente con efecto *glassmorphism* y contador en tiempo real al seleccionar casillas de tareas individuales o hijas.
+   - **Operaciones Masivas Disponibles:**
+     - 🔄 **Cambio de Estado:** Pendiente (`todo`), En curso (`in_progress`), Retenido (`waiting_on_third_party`) o Completada (`completed`).
+     - 🔴 **Cambio de Prioridad:** Asignación en lote a Alta, Media o Baja.
+     - ⏱️ **Ajuste de Tiempo Estimado:** Minutos prefijados (5m, 15m, 30m, 60m) o personalizados.
+     - 📅 **Fecha Límite / Vencimiento:** Asignación simultánea de fecha con selector interactivo.
+     - 🏛️ **Reasignación de Concejalía:** Cambio unificado de área responsable.
+     - ⚠️ **Asignación de Motivo de Retención / Tercero:** Con trazabilidad temporal.
+     - ☀️ **Toggle en "Mi Día":** Inclusión o exclusión masiva del panel de foco diario.
+     - 🗑️ **Eliminación Atómica en Lote:** Borrado seguro con diálogo de confirmación.
+   - **Integración Global:** Activo en *Mi Día*, *Bandeja General*, *Árbol de Expedientes*, *Contratos Menores* y la *Ficha de Expediente*.
 
-4. **Rediseño Completo del Cuadro de Mando Analítico (`DashboardView.tsx`):**
-   - Ingesta en tiempo real leyendo expedientes (`isProject: true`) directamente desde `/tareas` en Firestore.
-   - **Gráfico de Barras Interactivo por Concejalía (Recharts):** Visualización de volumen con colores inmutables oficiales por concejalía.
-   - **Medidores de Avance por Concejalía:** Barras de porcentaje (% completado) por área municipal.
-   - **Gráfico de Dona (Estado Operativo):** Desglose visual de trámites *Pendientes*, *En Curso*, *Retenidas por Terceros* y *Completadas*, con indicador central de volumen total.
-   - **Análisis de Cuellos de Botella (Entidades Retenedoras):** Identificación y clasificación de las entidades que retienen trámites (*Intervención, Tesorería, Contratación, etc.*).
-   - **KPIs y Métricas de Tiempo:** Tarjetas con expedientes activos, tasa global de resolución (%) y carga estimada en horas/minutos.
+4. **📌 Botones de Acción Fijados ("Sticky"):**
+   - Cabeceras y barras de botones (`+ Añadir Tarea`, `+ Añadir Contrato`, `📋 Pegar Lista`) fijadas con `sticky top-0 backdrop-blur-md` en `ExpedienteDetailPanel.tsx`, `ExpedienteBuilderModal.tsx` y `MacroExpedienteModal.tsx` para evitar tener que desplazarse arriba y abajo al trabajar con listas extensas.
 
-5. **Estado Inicial Predeterminado en Desplegables (`MiDiaView.tsx`):**
-   - Configuración para que todos los acordeones y desplegables de expedientes permanezcan cerrados por defecto (`new Set()`) al iniciar la aplicación o cargar la vista de *Mi Día*.
+5. **⏱️ Sistema de Control de Plazos Críticos y Semáforos (`deadlines.ts`, `DeadlineAlertModal.tsx`):**
+   - **Cómputo en Días Hábiles vs. Naturales:** Cálculo automático descontando fines de semana y festivos según la Ley 39/2015 del Procedimiento Administrativo Común.
+   - **Semáforo Dinámico en 4 Fases:**
+     - 🟢 **Plazo Holgado:** Más de 10 días hábiles restantes.
+     - 🟡 **En Atención:** Entre 3 y 10 días hábiles restantes.
+     - 🟠 **Alerta Crítica:** Menos de 48 horas / Vence hoy.
+     - 🔴 **Vencido:** Insignia roja con contador de días de retraso (`-Xd`).
+   - **Campana de Alertas en Cabecera:** Insignia roja con contador de trámites urgentes en el header general que abre el Centro de Alertas prioritario.
 
-6. **Exportación de Texto Plano Formateado para WhatsApp y Correo (`exportUtils.ts`):**
-   - **Formateador Automático:** Nueva función `copyExpedientTasksToClipboard` que limpia sufijos y genera la lista numerada perfecta (`1. Tarea A`, `2. Tarea B`, ..., `N. Tarea N`) para pegar directamente en WhatsApp, Gmail o Outlook.
-   - **Acción en 1 Clic:** Botones `📋 Copiar Texto` en el panel de detalles y `TXT` en cada tarjeta de expediente.
+6. **📁 Integración con Google Drive y Check-list Documental (`ExpedienteDetailPanel.tsx`, `TaskDetailPanel.tsx`):**
+   - **Enlaces Directos a Drive:** Enlaces a carpetas o documentos específicos de Google Drive por cada tarea y a nivel de expediente.
+   - **Botón Rápido `📁 Drive`:** Integrado en todas las tarjetas y filas para abrir la carpeta de trabajo en 1 clic.
+   - **Check-list de Documentación Obligatoria (LCSP Art. 118):** Verificación de los 7 documentos preceptivos (*Memoria justificativa, RC de Intervención, 3 Presupuestos, Decreto de adjudicación, Factura FACe, ADO*) con barra de progreso porcentual.
 
-7. **Optimización de Plantilla PDF e Impresión A4 Vertical (`exportUtils.ts`):**
-   - **Formato A4 Vertical Predeterminado (`@page { size: A4 portrait; margin: 10mm 12mm; }`):** Configuración nativa para que los navegadores seleccionen automáticamente la orientación **A4 Vertical** por defecto.
-   - **Eliminación de Espacios en Blanco:** Rediseño compacto de cabeceras, tarjetas métricas y tablas (padding de celdas a `6px 10px` con alternado `#f8fafc`).
+7. **📊 Cuadro de Mandos y Dashboard Ejecutivo (`DashboardView.tsx`):**
+   - Pestaña **`📊 Analítica`** con KPIs en tiempo real (Expedientes totales, Contratos menores, % de Cumplimiento de plazos, Trámites retenidos).
+   - Gráficos de distribución de carga de trabajo por Concejalía.
+   - **Detector de Cuellos de Botella:** Identificación y tiempo promedio de trámites retenidos por terceros o departamentos.
+   - **Generador de Informe Ejecutivo Oficial en PDF / Impresión A4:** Documento maquetado con membrete municipal listo para comisiones o juntas de gobierno.
 
-8. **Ordenación Numérica Estricta y Auto-Numeración en Expedientes (`exportUtils.ts`, `ExpedienteDetailPanel.tsx`, `ExpedienteBuilderModal.tsx`):**
-   - Incorporada la función `sortExpedientTasksNaturally` que ordena numéricamente las tareas (`1.`, `2.`, `3.`, ..., `N.`) antes de generar vistas, exportaciones PDF y archivos CSV.
+8. **🤖 Automatizaciones y Clonador de Macro-Expedientes Anuales:**
+   - Botón **`🔄 Duplicar para Próxima Edición / Año`** en la ficha del expediente para clonar macro-expedientes completos con estados limpios a pendiente, nuevo año y nuevo código EXP.
+   - Detección y avisos visuales automáticos para tareas retenidas más de 5 días.
 
 ---
 
 ## 📌 Tareas Pendientes para la Próxima Sesión
 
-1. **Notificaciones y Recordatorios Automáticos:**
-   - Configuración de alertas emergentes cuando un expediente o tarea vinculada a terceros supere su fecha límite.
+1. **Notificaciones Push Nativas y Modo Offline (Capacitor Android):**
+   - Activación de notificaciones push en el móvil para avisos de plazos críticos a 24h.
+   - Sincronización offline con Firestore para trabajo de campo sin cobertura.
+
+2. **Generador de Carátulas Físicas con Códigos QR:**
+   - Impresión de carátula A4 y etiquetas de lomo para carpetas físicas de archivador con QR de acceso directo al expediente.
 
 ---
 
-*Proyecto sincronizado nativamente con Android Capacitor y desplegado en producción en Firebase Hosting.*
+*Proyecto sincronizado en GitHub y desplegado en producción en Firebase Hosting.*
