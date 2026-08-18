@@ -10,6 +10,7 @@ import BulkTaskActionBar from './BulkTaskActionBar';
 import { getConcejaliaStyle, getPriorityStyle, getPriorityBadgeClass } from '../utils/concejaliaColors';
 import { exportExpedientToPDF, exportExpedientToCSV, copyExpedientTasksToClipboard, exportConcejaliaReportToPDF, exportConcejaliaReportToCSV } from '../utils/exportUtils';
 import { useConcejalias } from '../hooks/useConcejalias';
+import { getTaskDeadlineInfo, getRetentionWarning } from '../utils/deadlines';
 
 interface Props {
   user: User;
@@ -694,6 +695,29 @@ export default function ExpedientesView({ user, searchQuery = '', onSelectTask, 
                                 <div className="flex items-center gap-2 shrink-0">
                                   {getStatusBadge(tarea.status, tarea.blockedBy)}
                                   {getPriorityBadge(tarea.prioridad, (tarea as any).priority)}
+                                  {(() => {
+                                    const dl = getTaskDeadlineInfo(tarea);
+                                    if (dl.severity !== 'none') {
+                                      return (
+                                        <span className={`text-[10px] px-2 py-0.5 rounded-md border font-bold ${dl.badgeClass}`}>
+                                          {dl.formattedText}
+                                        </span>
+                                      );
+                                    }
+                                    return null;
+                                  })()}
+                                  {tarea.driveFolderUrl && (
+                                    <a
+                                      href={tarea.driveFolderUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="px-2 py-0.5 bg-blue-50 dark:bg-blue-950/40 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 text-[11px] font-bold rounded border border-blue-200 dark:border-blue-800 flex items-center gap-1 transition-all"
+                                      title="Abrir carpeta en Google Drive"
+                                    >
+                                      <span>📁</span> Drive
+                                    </a>
+                                  )}
                                   <span className="text-[11px] font-medium text-slate-400 bg-slate-100 dark:bg-slate-700/50 px-2 py-0.5 rounded">
                                     {tarea.estimatedTimeMin ? `${tarea.estimatedTimeMin} min` : tarea.tiempo_estimado}
                                   </span>

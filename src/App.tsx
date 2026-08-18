@@ -11,7 +11,11 @@ import PlantillasView from './components/PlantillasView';
 import DashboardView from './components/DashboardView';
 import TaskDetailPanel from './components/TaskDetailPanel';
 import ExpedienteDetailPanel from './components/ExpedienteDetailPanel';
+import DeadlineAlertModal from './components/DeadlineAlertModal';
 import { Tarea, Project } from './types';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { db } from './firebaseConfig';
+import { getTaskDeadlineInfo, getRetentionWarning } from './utils/deadlines';
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -20,6 +24,8 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTask, setSelectedTask] = useState<Tarea | null>(null);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  const [allTareas, setAllTareas] = useState<Tarea[]>([]);
+  const [isAlertModalOpen, setIsAlertModalOpen] = useState(false);
 
   const [isDark, setIsDark] = useState(() => {
     return document.documentElement.classList.contains('dark');
@@ -52,6 +58,37 @@ export default function App() {
     });
     return () => unsubscribe();
   }, []);
+
+  // Escuchar todas las tareas para calcular alertas urgentes globales
+  useEffect(() => {
+    if (!user?.uid) return;
+
+    const q = query(
+      collection(db, 'tareas'),
+      where('userId', '==', user.uid)
+    );
+
+    const unsub = onSnapshot(q, (snapshot) => {
+      const tList: Tarea[] = [];
+      snapshot.forEach((d) => {
+        const data = d.data();
+        if (!data.isTemplate && !data.isConcejalia && !data.isProject) {
+          tList.push({ id: d.id, ...data } as Tarea);
+        }
+      });
+      setAllTareas(tList);
+    });
+
+    return () => unsub();
+  }, [user?.uid]);
+
+  // Contar tareas que requieren atención
+  const urgentCount = allTareas.filter(t => {
+    if (t.status === 'completed' || t.completada) return false;
+    const deadline = getTaskDeadlineInfo(t);
+    const retention = getRetentionWarning(t);
+    return deadline.isUrgent || deadline.isExpired || retention.isProlonged;
+  }).length;
 
   if (loading) {
     return (
@@ -222,15 +259,35 @@ export default function App() {
             </div>
           </div>
           
-          <div className="w-full md:w-80 relative">
-            <svg className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-            <input 
-              type="text" 
-              placeholder="Buscar..." 
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-4 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 transition-all outline-none"
-            />
+          <div className="flex items-center gap-3 w-full md:w-auto justify-between md:justify-end">
+            {/* BOTÓN CAMPANA DE ALERTAS DE PLAZOS */}
+            <button
+              type="button"
+              onClick={() => setIsAlertModalOpen(true)}
+              className={`relative px-3 py-1.5 rounded-xl border font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
+                urgentCount > 0
+                  ? 'bg-red-50 dark:bg-red-950/50 text-red-700 dark:text-red-300 border-red-300 dark:border-red-800 shadow-xs'
+                  : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+              }`}
+              title="Centro de Alertas de Plazos y Retenciones"
+            >
+              <span>⏱️</span>
+              <span className="hidden sm:inline">Alertas:</span>
+              <span className={`px-1.5 py-0.5 rounded-full text-[11px] font-black ${urgentCount > 0 ? 'bg-red-600 text-white animate-pulse' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}>
+                {urgentCount}
+              </span>
+            </button>
+
+            <div className="w-full md:w-80 relative">
+              <svg className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+              <input 
+                type="text" 
+                placeholder="Buscar..." 
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-4 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 transition-all outline-none"
+              />
+            </div>
           </div>
         </header>
 
@@ -248,7 +305,7 @@ export default function App() {
           ) : currentView === 'plantillas' ? (
             <PlantillasView user={user} searchQuery={searchQuery} />
           ) : (
-            <DashboardView user={user} />
+            <DashboardView user={user} onSelectTask={handleSelectTask} onSelectProject={handleSelectProject} />
           )}
         </div>
 
@@ -341,6 +398,15 @@ export default function App() {
              <ExpedienteDetailPanel project={selectedProject} onClose={() => setSelectedProject(null)} />
           </div>
         </div>
+      )}
+
+      {/* MODAL DE ALERTAS DE PLAZOS Y RETENCIONES */}
+      {isAlertModalOpen && (
+        <DeadlineAlertModal
+          tasks={allTareas}
+          onClose={() => setIsAlertModalOpen(false)}
+          onSelectTask={handleSelectTask}
+        />
       )}
 
     </div>

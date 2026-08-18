@@ -8,6 +8,8 @@ import BulkTaskActionBar from './BulkTaskActionBar';
 import { useConcejalias } from '../hooks/useConcejalias';
 import { getConcejaliaStyle } from '../utils/concejaliaColors';
 import { exportExpedientToPDF, exportExpedientToCSV, sortExpedientTasksNaturally, copyExpedientTasksToClipboard } from '../utils/exportUtils';
+import { getDefaultChecklistForType, getTaskDeadlineInfo } from '../utils/deadlines';
+import { ChecklistDocItem, generateExpedientCode } from '../types';
 
 interface Props {
   project: Project;
@@ -23,11 +25,19 @@ export default function ExpedienteDetailPanel({ project, onClose }: Props) {
   const [linkedExpedientId, setLinkedExpedientId] = useState(project.linkedExpedientId || '');
   const [notas, setNotas] = useState(project.notas || project.notes || '');
   const [projectStatus, setProjectStatus] = useState<'active' | 'completed' | 'archived'>(project.status || 'active');
+  const [driveFolderUrl, setDriveFolderUrl] = useState(project.driveFolderUrl || '');
+  const [sedeUrl, setSedeUrl] = useState(project.sedeUrl || '');
+  const [checklistDocs, setChecklistDocs] = useState<ChecklistDocItem[]>(() => {
+    if (project.checklistDocs && project.checklistDocs.length > 0) return project.checklistDocs;
+    return getDefaultChecklistForType(project.isContratoMenor ? 'contrato_menor' : 'general');
+  });
+
   const [existingProjects, setExistingProjects] = useState<{ id: string; name: string; code: string }[]>([]);
   const [childProjects, setChildProjects] = useState<Project[]>([]);
   const [tasks, setTasks] = useState<Tarea[]>([]);
   const [isAddingCMModalOpen, setIsAddingCMModalOpen] = useState(false);
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
+  const [isCloning, setIsCloning] = useState(false);
 
   // Estados para modificar títulos, minutos y estados de las tareas pendientes existentes
   const [editedTitles, setEditedTitles] = useState<Record<string, string>>({});
@@ -270,6 +280,9 @@ export default function ExpedienteDetailPanel({ project, onClose }: Props) {
           status: projectStatus,
           notas: notas.trim(),
           notes: notas.trim(),
+          driveFolderUrl: driveFolderUrl.trim(),
+          sedeUrl: sedeUrl.trim(),
+          checklistDocs,
           userId: project.userId,
           ...(newDueDateMs ? { dueDate: newDueDateMs, fecha_vencimiento: newDueDateMs } : {})
         }, { merge: true });
@@ -277,12 +290,90 @@ export default function ExpedienteDetailPanel({ project, onClose }: Props) {
 
       await batch.commit();
       setIsSaving(false);
-      setSuccessMsg("¡Expediente y tareas hijas actualizados con éxito!");
+      setSuccessMsg("¡Expediente, enlaces y documentación actualizados con éxito!");
       setTimeout(() => setSuccessMsg(null), 3000);
     } catch (error: any) {
       console.error("Error al actualizar expediente en lote: ", error);
       setIsSaving(false);
       setErrorMsg(error?.message || "Error al guardar los cambios.");
+    }
+  };
+
+  const handleCloneForNextYear = async () => {
+    if (!window.confirm(`¿Deseas clonar este expediente completo ("${project.name}") con todas sus tareas limpias para la próxima edición o ejercicio?`)) return;
+
+    setIsCloning(true);
+    setErrorMsg(null);
+    setSuccessMsg(null);
+
+    try {
+      const currentYear = new Date().getFullYear();
+      const nextYear = currentYear + 1;
+      let clonedName = project.name;
+
+      if (clonedName.includes(String(currentYear))) {
+        clonedName = clonedName.replace(new RegExp(String(currentYear), 'g'), String(nextYear));
+      } else {
+        clonedName = `${clonedName} (${nextYear})`;
+      }
+
+      const newExpedientCode = generateExpedientCode();
+      const newProjectId = `proj_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      const batch = writeBatch(db);
+
+      // Crear nuevo expediente
+      const pRef = doc(db, 'tareas', newProjectId);
+      batch.set(pRef, {
+        ...project,
+        id: newProjectId,
+        projectId: newProjectId,
+        name: clonedName,
+        projectName: clonedName,
+        expedientCode: newExpedientCode,
+        status: 'active',
+        createdAt: Date.now(),
+        fecha_creacion: Date.now(),
+        checklistDocs: checklistDocs.map(c => ({ ...c, completed: false }))
+      });
+
+      // Clonar tareas hijas con estado 'todo'
+      tasks.forEach((t, idx) => {
+        const newTaskId = `task_${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 6)}`;
+        const tRef = doc(db, 'tareas', newTaskId);
+        const cleanTitle = t.title || t.titulo.split(' - ')[0] || t.titulo;
+
+        batch.set(tRef, {
+          userId: project.userId,
+          titulo: `${cleanTitle} - ${clonedName}`,
+          title: cleanTitle,
+          notas: t.notas || t.notes || '',
+          notes: t.notas || t.notes || '',
+          status: 'todo',
+          completada: false,
+          estimatedTimeMin: t.estimatedTimeMin || 15,
+          tiempo_estimado: `${t.estimatedTimeMin || 15}m`,
+          isInMyDay: false,
+          prioridad: t.prioridad || 'media',
+          concejalia: project.concejalia,
+          projectConcejalia: project.concejalia,
+          projectMasterCategory: project.concejalia,
+          projectId: newProjectId,
+          projectName: clonedName,
+          expedientCode: newExpedientCode,
+          orderIndex: t.orderIndex ?? idx + 1,
+          createdAt: Date.now(),
+          fecha_creacion: Date.now()
+        });
+      });
+
+      await batch.commit();
+      setIsCloning(false);
+      setSuccessMsg(`¡Expediente clonado con éxito: "${clonedName}" (${newExpedientCode})!`);
+      setTimeout(() => setSuccessMsg(null), 4000);
+    } catch (err: any) {
+      console.error("Error cloning expedient: ", err);
+      setIsCloning(false);
+      setErrorMsg("Error al clonar el expediente.");
     }
   };
 
@@ -521,6 +612,112 @@ export default function ExpedienteDetailPanel({ project, onClose }: Props) {
           </p>
         </div>
 
+        {/* ENLACES EXTERNOS (GOOGLE DRIVE Y SEDE ELECTRÓNICA) */}
+        <div className="p-4 bg-blue-50/50 dark:bg-blue-950/20 border border-blue-200/80 dark:border-blue-800/50 rounded-2xl space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold uppercase tracking-wider text-blue-900 dark:text-blue-200 flex items-center gap-1.5">
+              <span>📁</span> Repositorio Google Drive & Sede
+            </span>
+          </div>
+
+          <div className="space-y-2">
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                  Carpeta Raíz en Google Drive:
+                </label>
+                {driveFolderUrl.trim() && (
+                  <a
+                    href={driveFolderUrl.trim()}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
+                  >
+                    <span>🔗 Abrir Carpeta</span>
+                  </a>
+                )}
+              </div>
+              <input
+                type="url"
+                value={driveFolderUrl}
+                onChange={(e) => setDriveFolderUrl(e.target.value)}
+                placeholder="https://drive.google.com/drive/folders/..."
+                className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-blue-200 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+              />
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                  Enlace Sede Electrónica / Gestor:
+                </label>
+                {sedeUrl.trim() && (
+                  <a
+                    href={sedeUrl.trim()}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1"
+                  >
+                    <span>🏛️ Abrir en Sede</span>
+                  </a>
+                )}
+              </div>
+              <input
+                type="url"
+                value={sedeUrl}
+                onChange={(e) => setSedeUrl(e.target.value)}
+                placeholder="https://sedeelectronica.es/expediente/..."
+                className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* CHECKLIST DE DOCUMENTACIÓN PRECEPTIVA */}
+        <div className="p-4 bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-2xl space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <span>📑</span> Check-list de Documentación Obligatoria
+              </span>
+              <p className="text-[11px] text-slate-400">
+                {checklistDocs.filter(d => d.completed).length} de {checklistDocs.length} documentos aportados ({checklistDocs.length > 0 ? Math.round((checklistDocs.filter(d => d.completed).length / checklistDocs.length) * 100) : 0}%)
+              </p>
+            </div>
+            <div className="w-20 bg-slate-200 dark:bg-slate-700 h-2 rounded-full overflow-hidden">
+              <div 
+                className="bg-emerald-500 h-full rounded-full transition-all"
+                style={{ width: `${checklistDocs.length > 0 ? (checklistDocs.filter(d => d.completed).length / checklistDocs.length) * 100 : 0}%` }}
+              ></div>
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            {checklistDocs.map((docItem, dIdx) => (
+              <div
+                key={docItem.id || dIdx}
+                className="p-2 bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 rounded-xl flex items-center justify-between gap-2"
+              >
+                <label className="flex items-center gap-2 text-xs font-medium text-slate-700 dark:text-slate-200 cursor-pointer select-none flex-1 min-w-0">
+                  <input
+                    type="checkbox"
+                    checked={docItem.completed}
+                    onChange={(e) => {
+                      const updated = [...checklistDocs];
+                      updated[dIdx] = { ...docItem, completed: e.target.checked };
+                      setChecklistDocs(updated);
+                    }}
+                    className="w-4 h-4 text-emerald-600 rounded border-slate-300 dark:border-slate-600"
+                  />
+                  <span className={`truncate ${docItem.completed ? 'line-through text-slate-400' : ''}`}>
+                    {docItem.name}
+                  </span>
+                </label>
+              </div>
+            ))}
+          </div>
+        </div>
+
         {/* SECCIÓN SUB-CONTRATOS MENORES SI ES MACRO-EXPEDIENTE */}
         {(project.isMacroProject || project.type === 'macro_expediente' || childProjects.length > 0) && (
           <div className="p-4 bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/60 rounded-2xl space-y-3">
@@ -734,6 +931,16 @@ export default function ExpedienteDetailPanel({ project, onClose }: Props) {
           ) : (
             <span>Guardar Cambios en Lote</span>
           )}
+        </button>
+
+        <button
+          type="button"
+          onClick={handleCloneForNextYear}
+          disabled={isCloning || isSaving}
+          className="w-full py-2.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-xl font-bold text-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+        >
+          <span>🔄</span>
+          <span>{isCloning ? 'Clonando Expediente...' : 'Duplicar para Próxima Edición / Año'}</span>
         </button>
 
         <button

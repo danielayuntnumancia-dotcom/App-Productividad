@@ -1,506 +1,513 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 import { User } from 'firebase/auth';
 import { Tarea, Project } from '../types';
 import { getConcejaliaStyle } from '../utils/concejaliaColors';
-import {
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  Cell,
-  PieChart,
-  Pie,
-  Legend
-} from 'recharts';
+import { getTaskDeadlineInfo, getRetentionWarning } from '../utils/deadlines';
 
 interface Props {
   user: User;
+  onSelectTask: (tarea: Tarea) => void;
+  onSelectProject?: (project: Project) => void;
 }
 
-// Mapeo de colores Hex para Recharts correspondiente a concejaliaColors.ts
-const CONCEJALIA_HEX_MAP: Record<string, string> = {
-  'Economía y Hacienda': '#3b82f6', // Azul Indigo/Blue
-  'Medio Ambiente': '#10b981', // Verde Esmeralda
-  'Policía Local y Movilidad': '#f59e0b', // Naranja/Ámbar
-  'Transporte': '#06b6d4', // Cyan
-  'Entidades Urbanísticas de Conservación': '#a855f7' // Púrpura
-};
+type TimeRange = 'month' | 'quarter' | 'year' | 'all';
 
-const DYNAMIC_HEX_PALETTE = ['#6366f1', '#f43f5e', '#14b8a6', '#06b6d4', '#d946ef', '#ec4899', '#8b5cf6'];
+export default function DashboardView({ user, onSelectTask, onSelectProject }: Props) {
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [allTareas, setAllTareas] = useState<Tarea[]>([]);
+  const [timeRange, setTimeRange] = useState<TimeRange>('year');
 
-const getConcejaliaHexColor = (name: string): string => {
-  if (CONCEJALIA_HEX_MAP[name]) return CONCEJALIA_HEX_MAP[name];
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) {
-    hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  const index = Math.abs(hash) % DYNAMIC_HEX_PALETTE.length;
-  return DYNAMIC_HEX_PALETTE[index];
-};
-
-// Colores para el gráfico de dona (Estado de las tareas)
-const STATUS_COLORS: Record<string, { label: string; color: string; badge: string }> = {
-  todo: { label: 'Pendientes', color: '#94a3b8', badge: 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300' },
-  in_progress: { label: 'En Curso', color: '#6366f1', badge: 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300' },
-  waiting_on_third_party: { label: 'Retenidas por Terceros', color: '#ef4444', badge: 'bg-rose-100 dark:bg-rose-900/50 text-rose-700 dark:text-rose-300' },
-  completed: { label: 'Completadas', color: '#10b981', badge: 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300' }
-};
-
-export default function DashboardView({ user }: Props) {
-  const [tareas, setTareas] = useState<Tarea[]>([]);
-  const [expedientes, setExpedientes] = useState<Project[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  // Escuchar la colección /tareas (tanto tareas como expedientes con isProject: true)
+  // Escuchar proyectos
   useEffect(() => {
-    const q = query(
+    const qProjects = query(
+      collection(db, 'tareas'),
+      where('userId', '==', user.uid),
+      where('isProject', '==', true)
+    );
+
+    const unsub = onSnapshot(qProjects, (snapshot) => {
+      const pList: Project[] = [];
+      snapshot.forEach((d) => {
+        const data = d.data();
+        pList.push({ id: data.projectId || data.id || d.id, ...data } as Project);
+      });
+      setProjects(pList);
+    });
+
+    return () => unsub();
+  }, [user.uid]);
+
+  // Escuchar tareas
+  useEffect(() => {
+    const qTareas = query(
       collection(db, 'tareas'),
       where('userId', '==', user.uid)
     );
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const taskList: Tarea[] = [];
-      const expList: Project[] = [];
-
+    const unsub = onSnapshot(qTareas, (snapshot) => {
+      const tList: Tarea[] = [];
       snapshot.forEach((d) => {
         const data = d.data();
-        if (data.isTemplate || data.isConcejalia) return;
-
-        if (data.isProject) {
-          expList.push({ id: d.id, ...data } as Project);
-        } else {
-          taskList.push({ id: d.id, ...data } as Tarea);
+        if (!data.isTemplate && !data.isConcejalia && !data.isProject) {
+          tList.push({ id: d.id, ...data } as Tarea);
         }
       });
-
-      setTareas(taskList);
-      setExpedientes(expList);
-      setLoading(false);
+      setAllTareas(tList);
     });
 
-    return () => unsubscribe();
+    return () => unsub();
   }, [user.uid]);
 
-  // Escuchar también la colección secundaria /projects por retrocompatibilidad
-  useEffect(() => {
-    const qProjects = query(
-      collection(db, 'projects'),
-      where('userId', '==', user.uid)
-    );
-
-    const unsubProjects = onSnapshot(qProjects, (snapshot) => {
-      if (snapshot.empty) return;
-      setExpedientes((prevExp) => {
-        const existingIds = new Set(prevExp.map(p => p.id));
-        const extraProjects: Project[] = [];
-        snapshot.forEach((d) => {
-          if (!existingIds.has(d.id)) {
-            extraProjects.push({ id: d.id, ...d.data() } as Project);
-          }
-        });
-        return extraProjects.length > 0 ? [...prevExp, ...extraProjects] : prevExp;
-      });
-    });
-
-    return () => unsubProjects();
-  }, [user.uid]);
-
-  // --- CÁLCULOS DE MÉTRICAS Y KPIS ---
-
-  // 1. Expedientes Activos y Totales
-  const totalExpedientes = expedientes.length > 0 ? expedientes.length : new Set(tareas.map(t => t.projectId).filter(Boolean)).size;
-  const expedientesCompletados = expedientes.filter(p => p.status === 'completed').length;
-  const activeExpedientesCount = expedientes.length > 0
-    ? expedientes.filter(p => p.status !== 'completed' && p.status !== 'archived').length
-    : totalExpedientes;
-
-  // 2. Estado de Tareas
-  const statusCounts = {
-    todo: 0,
-    in_progress: 0,
-    waiting_on_third_party: 0,
-    completed: 0
+  // Filtrar según rango temporal
+  const now = new Date();
+  const getFilterTimestamp = (): number => {
+    if (timeRange === 'month') {
+      return new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+    }
+    if (timeRange === 'quarter') {
+      const currentQuarterMonth = Math.floor(now.getMonth() / 3) * 3;
+      return new Date(now.getFullYear(), currentQuarterMonth, 1).getTime();
+    }
+    if (timeRange === 'year') {
+      return new Date(now.getFullYear(), 0, 1).getTime();
+    }
+    return 0; // all
   };
 
-  tareas.forEach((t) => {
-    if (t.completada || t.status === 'completed') {
-      statusCounts.completed++;
-    } else if (t.status === 'waiting_on_third_party') {
-      statusCounts.waiting_on_third_party++;
-    } else if (t.status === 'in_progress') {
-      statusCounts.in_progress++;
-    } else {
-      statusCounts.todo++;
-    }
+  const minTimestamp = getFilterTimestamp();
+
+  // Tareas y Proyectos filtrados
+  const filteredTareas = allTareas.filter((t) => {
+    if (minTimestamp === 0) return true;
+    const created = t.fecha_creacion || (typeof t.createdAt === 'number' ? t.createdAt : 0);
+    return created >= minTimestamp;
   });
 
-  const totalTareas = tareas.length;
-  const porcentajeCompletado = totalTareas > 0 ? Math.round((statusCounts.completed / totalTareas) * 100) : 0;
-
-  // 3. Minutos/Horas Estimadas Totales
-  const minutosEstimadosTotales = tareas.reduce((acc, t) => acc + (t.estimatedMinutes || (t as any).minutos_estimados || 0), 0);
-  const horasEstimadasTotales = (minutosEstimadosTotales / 60).toFixed(1);
-
-  // 4. Datos por Concejalía (Volumen y Porcentaje de Avance)
-  const concejaliaStats: Record<string, { name: string; total: number; completed: number; inProgress: number; waiting: number }> = {};
-
-  // Contabilizar desde expedientes
-  expedientes.forEach((exp) => {
-    const cName = exp.concejalia || 'Sin asignación';
-    if (!concejaliaStats[cName]) {
-      concejaliaStats[cName] = { name: cName, total: 0, completed: 0, inProgress: 0, waiting: 0 };
-    }
-    concejaliaStats[cName].total++;
-    if (exp.status === 'completed') concejaliaStats[cName].completed++;
+  const filteredProjects = projects.filter((p) => {
+    if (minTimestamp === 0) return true;
+    const created = p.fecha_creacion || (typeof p.createdAt === 'number' ? p.createdAt : 0);
+    return created >= minTimestamp;
   });
 
-  // Contabilizar desde tareas
-  tareas.forEach((t) => {
-    const cName = t.concejalia || t.projectConcejalia || 'Sin asignación';
-    if (!concejaliaStats[cName]) {
-      concejaliaStats[cName] = { name: cName, total: 0, completed: 0, inProgress: 0, waiting: 0 };
+  // Métricas Clave (KPIs)
+  const totalExpedientes = filteredProjects.length;
+  const expedientesCompletados = filteredProjects.filter(p => p.status === 'completed').length;
+  const expedientesActivos = filteredProjects.filter(p => p.status === 'active').length;
+  const contratosMenoresTotal = filteredProjects.filter(p => p.isContratoMenor || p.type === 'contrato_menor').length;
+
+  const totalTareasCount = filteredTareas.length;
+  const tareasCompletadasCount = filteredTareas.filter(t => t.status === 'completed' || t.completada).length;
+  const tareasEnCursoCount = filteredTareas.filter(t => t.status === 'in_progress').length;
+  const tareasRetenidasCount = filteredTareas.filter(t => t.status === 'waiting_on_third_party').length;
+  const tareasPendientesCount = filteredTareas.filter(t => t.status === 'todo' || !t.status).length;
+
+  // Evaluación de plazos y cumplimiento
+  const deadlineEvals = filteredTareas.map(t => getTaskDeadlineInfo(t));
+  const expiredTasksCount = deadlineEvals.filter(d => d.isExpired).length;
+  const criticalTasksCount = deadlineEvals.filter(d => d.severity === 'critical').length;
+  const safeTasksCount = deadlineEvals.filter(d => d.severity === 'safe' || d.severity === 'warning').length;
+
+  const totalEvaluated = expiredTasksCount + criticalTasksCount + safeTasksCount;
+  const cumplimientoPorcentaje = totalEvaluated > 0 
+    ? Math.round(((totalEvaluated - expiredTasksCount) / totalEvaluated) * 100)
+    : 100;
+
+  // Desglose por Concejalía
+  const concejaliaCounts: Record<string, { total: number; completed: number; active: number; contracts: number }> = {};
+
+  filteredProjects.forEach((p) => {
+    const cName = p.concejalia || 'General';
+    if (!concejaliaCounts[cName]) {
+      concejaliaCounts[cName] = { total: 0, completed: 0, active: 0, contracts: 0 };
     }
-    concejaliaStats[cName].total++;
-    if (t.completada || t.status === 'completed') concejaliaStats[cName].completed++;
-    else if (t.status === 'in_progress') concejaliaStats[cName].inProgress++;
-    else if (t.status === 'waiting_on_third_party') concejaliaStats[cName].waiting++;
+    concejaliaCounts[cName].total += 1;
+    if (p.status === 'completed') concejaliaCounts[cName].completed += 1;
+    else concejaliaCounts[cName].active += 1;
+    if (p.isContratoMenor || p.type === 'contrato_menor') concejaliaCounts[cName].contracts += 1;
   });
 
-  const barChartData = Object.values(concejaliaStats).map((stat) => ({
-    concejalia: stat.name,
-    count: stat.total,
-    color: getConcejaliaHexColor(stat.name),
-    porcentaje: stat.total > 0 ? Math.round((stat.completed / stat.total) * 100) : 0
-  })).sort((a, b) => b.count - a.count);
+  const concejaliasSorted = Object.entries(concejaliaCounts).sort((a, b) => b[1].total - a[1].total);
 
-  // 5. Datos para el Gráfico de Dona
-  const pieChartData = [
-    { name: STATUS_COLORS.todo.label, value: statusCounts.todo, color: STATUS_COLORS.todo.color },
-    { name: STATUS_COLORS.in_progress.label, value: statusCounts.in_progress, color: STATUS_COLORS.in_progress.color },
-    { name: STATUS_COLORS.waiting_on_third_party.label, value: statusCounts.waiting_on_third_party, color: STATUS_COLORS.waiting_on_third_party.color },
-    { name: STATUS_COLORS.completed.label, value: statusCounts.completed, color: STATUS_COLORS.completed.color }
-  ].filter((item) => item.value > 0);
-
-  // 6. Análisis de Cuellos de Botella por Entidad Retenedora
-  const thirdPartyCounts: Record<string, number> = {};
-  tareas.forEach((t) => {
+  // Análisis de Cuellos de Botella (Retenciones)
+  const retentionMap: Record<string, { count: number; totalDays: number; tasks: Tarea[] }> = {};
+  filteredTareas.forEach((t) => {
     if (t.status === 'waiting_on_third_party') {
-      const entity = t.thirdPartyEntity || (t as any).entidad_retenedora || (t as any).retainedBy || 'Entidad no especificada';
-      thirdPartyCounts[entity] = (thirdPartyCounts[entity] || 0) + 1;
+      const reason = t.blockedBy || t.blockingReason || 'Tercero sin especificar';
+      const warning = getRetentionWarning(t);
+      if (!retentionMap[reason]) {
+        retentionMap[reason] = { count: 0, totalDays: 0, tasks: [] };
+      }
+      retentionMap[reason].count += 1;
+      retentionMap[reason].totalDays += warning.daysRetained;
+      retentionMap[reason].tasks.push(t);
     }
   });
 
-  const thirdPartyList = Object.entries(thirdPartyCounts)
-    .map(([entity, count]) => ({ entity, count }))
-    .sort((a, b) => b.count - a.count);
+  const bottlenecksSorted = Object.entries(retentionMap).sort((a, b) => b[1].count - a[1].count);
 
-  if (loading) {
-    return (
-      <div className="p-8 flex items-center justify-center min-h-[400px]">
-        <div className="w-10 h-10 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
-      </div>
-    );
-  }
+  // Exportar Informe Ejecutivo en PDF / Impresión
+  const exportExecutiveReportPDF = () => {
+    const rangeLabel = timeRange === 'month' ? 'Este Mes' : timeRange === 'quarter' ? 'Este Trimestre' : timeRange === 'year' ? 'Este Año 2026' : 'Todo el Histórico';
+    const printDate = new Date().toLocaleDateString('es-ES', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    const concejaliaTableRows = concejaliasSorted.map(([cName, data]) => {
+      const percent = totalExpedientes > 0 ? Math.round((data.total / totalExpedientes) * 100) : 0;
+      return `
+        <tr>
+          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-weight: 700; color: #1e293b;">${cName}</td>
+          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; text-align: center; font-weight: 700;">${data.total}</td>
+          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; text-align: center; color: #4f46e5;">${data.active}</td>
+          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; text-align: center; color: #16a34a;">${data.completed}</td>
+          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; text-align: center; color: #d97706;">${data.contracts}</td>
+          <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; text-align: right; font-weight: 700;">${percent}%</td>
+        </tr>
+      `;
+    }).join('');
+
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html lang="es">
+      <head>
+        <meta charset="UTF-8">
+        <title>Informe Ejecutivo de Gestión Municipal - ${rangeLabel}</title>
+        <style>
+          @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+          @page { size: A4 portrait; margin: 12mm; }
+          * { box-sizing: border-box; }
+          body { font-family: 'Inter', system-ui, -apple-system, sans-serif; color: #0f172a; margin: 0; padding: 0; background: #ffffff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #4f46e5; padding-bottom: 12px; margin-bottom: 16px; }
+          .title { font-size: 18px; font-weight: 800; color: #1e1b4b; margin: 0; }
+          .subtitle { font-size: 12px; color: #4338ca; font-weight: 700; margin-top: 4px; text-transform: uppercase; }
+          .meta-info { font-size: 10px; color: #64748b; margin-top: 4px; }
+          .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 18px; }
+          .kpi-card { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; }
+          .kpi-title { font-size: 9px; text-transform: uppercase; font-weight: 800; color: #64748b; margin-bottom: 2px; }
+          .kpi-val { font-size: 20px; font-weight: 900; color: #0f172a; }
+          .kpi-sub { font-size: 9px; color: #94a3b8; margin-top: 2px; }
+          table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 11px; }
+          th { background: #1e293b; color: #ffffff; text-align: left; padding: 8px 10px; font-size: 10px; text-transform: uppercase; }
+          .section-title { font-size: 13px; font-weight: 800; color: #1e293b; margin-top: 18px; margin-bottom: 6px; border-left: 4px solid #4f46e5; padding-left: 8px; }
+          .footer { margin-top: 24px; padding-top: 10px; border-top: 1px solid #e2e8f0; font-size: 9px; color: #94a3b8; text-align: center; }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <div>
+            <h1 class="title">AYUNTAMIENTO DE NUMANCIA DE LA SAGRA</h1>
+            <div class="subtitle">Cuadro de Mandos y Rendimiento de Gestión (${rangeLabel})</div>
+            <div class="meta-info">Fecha de emisión: ${printDate} | Responsable: ${user.email || 'Alcaldía'}</div>
+          </div>
+          <div style="font-size: 24px; font-weight: 900; color: #4f46e5;">FocusFlow</div>
+        </div>
+
+        <div class="kpi-grid">
+          <div class="kpi-card">
+            <div class="kpi-title">Expedientes Totales</div>
+            <div class="kpi-val">${totalExpedientes}</div>
+            <div class="kpi-sub">${expedientesActivos} activos / ${expedientesCompletados} finalizados</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-title">Contratos Menores</div>
+            <div class="kpi-val" style="color: #d97706;">${contratosMenoresTotal}</div>
+            <div class="kpi-sub">Trámites y memorias</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-title">Cumplimiento Plazos</div>
+            <div class="kpi-val" style="color: ${cumplimientoPorcentaje >= 80 ? '#16a34a' : '#dc2626'};">${cumplimientoPorcentaje}%</div>
+            <div class="kpi-sub">${expiredTasksCount} vencidas / ${criticalTasksCount} críticas</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-title">Retenciones Terceros</div>
+            <div class="kpi-val" style="color: #ea580c;">${tareasRetenidasCount}</div>
+            <div class="kpi-sub">Esperando informes/proveedor</div>
+          </div>
+        </div>
+
+        <div class="section-title">Distribución y Carga de Trabajo por Concejalía</div>
+        <table>
+          <thead>
+            <tr>
+              <th>Concejalía</th>
+              <th style="text-align: center;">Total Exp.</th>
+              <th style="text-align: center;">Activos</th>
+              <th style="text-align: center;">Completados</th>
+              <th style="text-align: center;">Contratos Menores</th>
+              <th style="text-align: right;">% Carga</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${concejaliaTableRows || '<tr><td colspan="6" style="padding: 12px; text-align: center; color: #94a3b8;">No hay datos para este periodo.</td></tr>'}
+          </tbody>
+        </table>
+
+        <div class="footer">
+          Documento generado automáticamente por FocusFlow • Ayuntamiento de Numancia de la Sagra
+        </div>
+
+        <script>
+          window.onload = function() {
+            setTimeout(function() {
+              window.print();
+            }, 300);
+          };
+        </script>
+      </body>
+      </html>
+    `;
+
+    printWindow.document.open();
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+  };
 
   return (
-    <div className="p-4 sm:p-6 md:p-8 space-y-8 bg-slate-50 dark:bg-slate-900 transition-colors duration-300 min-h-screen">
+    <div className="p-4 sm:p-6 md:p-8 max-w-7xl mx-auto w-full space-y-6 animate-fade-in">
       
-      {/* CABECERA Y TÍTULO */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-5">
+      {/* HEADER CON FILTROS Y BOTÓN DE INFORME */}
+      <section className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-slate-100 tracking-tight flex items-center gap-3">
-            <span>📊</span> Cuadro de Mando Analítico
+          <h2 className="text-2xl font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+            <span>📊</span> Cuadro de Mandos y Analítica Ejecutiva
           </h2>
-          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
-            Monitorización en tiempo real de expedientes municipales, rendimiento por concejalía y retenciones.
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            Control integral de carga de trabajo, plazos de tramitación y rendimiento municipal.
           </p>
         </div>
-        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800/60 text-xs font-semibold text-indigo-700 dark:text-indigo-300 shrink-0">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-          Sincronizado con Firestore
-        </div>
-      </div>
 
-      {/* 1. SECCIÓN DE TARJETAS DE RESUMEN (KPIs) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Selector de Rango Temporal */}
+          <div className="flex items-center gap-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-1 rounded-xl shadow-xs text-xs">
+            {(['month', 'quarter', 'year', 'all'] as const).map((r) => (
+              <button
+                key={r}
+                onClick={() => setTimeRange(r)}
+                className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer capitalize ${
+                  timeRange === r
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
+                }`}
+              >
+                {r === 'month' ? 'Este Mes' : r === 'quarter' ? 'Trimestre' : r === 'year' ? 'Año 2026' : 'Todo'}
+              </button>
+            ))}
+          </div>
+
+          <button
+            onClick={exportExecutiveReportPDF}
+            className="px-4 py-2 bg-gradient-to-r from-rose-600 to-rose-500 hover:from-rose-700 hover:to-rose-600 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
+          >
+            <span>📄</span> Informe Ejecutivo PDF
+          </button>
+        </div>
+      </section>
+
+      {/* TARJETAS DE KPIS PRINCIPALES */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         
-        {/* KPI 1: Expedientes Activos */}
-        <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 rounded-2xl p-5 shadow-sm hover:shadow-md transition-all duration-200 relative overflow-hidden group">
-          <div className="absolute top-0 left-0 w-1.5 h-full bg-indigo-500"></div>
-          <div className="flex items-center justify-between mb-3">
+        {/* KPI 1: Expedientes Totales */}
+        <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 rounded-2xl p-5 shadow-xs space-y-2">
+          <div className="flex items-center justify-between">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-              Expedientes Activos
+              Expedientes Totales
             </span>
-            <div className="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-              </svg>
-            </div>
-          </div>
-          <div className="text-3xl font-black text-slate-800 dark:text-slate-100">
-            {activeExpedientesCount}
-          </div>
-          <p className="text-xs font-medium text-slate-400 dark:text-slate-500 mt-2 flex items-center justify-between">
-            <span>De {totalExpedientes} expedientes totales</span>
-            {expedientesCompletados > 0 && (
-              <span className="text-emerald-600 dark:text-emerald-400 font-bold">✓ {expedientesCompletados} listos</span>
-            )}
-          </p>
-        </div>
-
-        {/* KPI 2: Tasa de Resolución / Eficiencia */}
-        <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 rounded-2xl p-5 shadow-sm hover:shadow-md transition-all duration-200 relative overflow-hidden group">
-          <div className="absolute top-0 left-0 w-1.5 h-full bg-emerald-500"></div>
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-              Tasa de Completitud
+            <span className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold">
+              📁
             </span>
-            <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
           </div>
-          <div className="text-3xl font-black text-slate-800 dark:text-slate-100 flex items-baseline gap-1">
-            {porcentajeCompletado}%
-            <span className="text-xs font-normal text-slate-400">({statusCounts.completed}/{totalTareas})</span>
+          <div className="flex items-baseline gap-2">
+            <span className="text-3xl font-black text-slate-800 dark:text-slate-100">
+              {totalExpedientes}
+            </span>
+            <span className="text-xs font-semibold text-slate-400">
+              ({expedientesActivos} activos / {expedientesCompletados} finalizados)
+            </span>
           </div>
-          {/* Progress bar visual */}
-          <div className="w-full bg-slate-100 dark:bg-slate-700 h-2 rounded-full mt-3 overflow-hidden">
-            <div 
-              className="bg-emerald-500 h-full rounded-full transition-all duration-500" 
-              style={{ width: `${porcentajeCompletado}%` }}
+          <div className="w-full bg-slate-100 dark:bg-slate-700 h-1.5 rounded-full overflow-hidden">
+            <div
+              className="bg-indigo-600 h-full rounded-full transition-all"
+              style={{ width: `${totalExpedientes > 0 ? (expedientesCompletados / totalExpedientes) * 100 : 0}%` }}
             ></div>
           </div>
         </div>
 
-        {/* KPI 3: Horas Estimadas Totales */}
-        <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 rounded-2xl p-5 shadow-sm hover:shadow-md transition-all duration-200 relative overflow-hidden group">
-          <div className="absolute top-0 left-0 w-1.5 h-full bg-blue-500"></div>
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-              Carga Estimada
+        {/* KPI 2: Contratos Menores */}
+        <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 rounded-2xl p-5 shadow-xs space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">
+              Contratos Menores
             </span>
-            <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
+            <span className="w-8 h-8 rounded-xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold">
+              📜
+            </span>
           </div>
-          <div className="text-3xl font-black text-slate-800 dark:text-slate-100 flex items-baseline gap-1">
-            {horasEstimadasTotales} <span className="text-sm font-semibold text-slate-500">horas</span>
+          <div className="flex items-baseline gap-2">
+            <span className="text-3xl font-black text-slate-800 dark:text-slate-100">
+              {contratosMenoresTotal}
+            </span>
+            <span className="text-xs font-semibold text-slate-400">
+              contratos tramitados
+            </span>
           </div>
-          <p className="text-xs font-medium text-slate-400 dark:text-slate-500 mt-2">
-            {minutosEstimadosTotales} minutos en {totalTareas} trámites
+          <p className="text-[11px] text-slate-400">
+            Con trámites de memoria, RC, 3 ofertas y decreto
           </p>
         </div>
 
-        {/* KPI 4: TARJETA ALERTA - Retenidas por Terceros */}
-        <div className="bg-amber-50/90 dark:bg-amber-950/40 border-2 border-amber-400 dark:border-amber-600/80 rounded-2xl p-5 shadow-sm hover:shadow-md transition-all duration-200 relative overflow-hidden">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-black uppercase tracking-wider text-amber-800 dark:text-amber-300">
-              Retenidas por Terceros
+        {/* KPI 3: Cumplimiento de Plazos */}
+        <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 rounded-2xl p-5 shadow-xs space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+              Eficacia en Plazos
             </span>
-            <div className="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center shadow-sm">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
-            </div>
+            <span className="w-8 h-8 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold">
+              ⏱️
+            </span>
           </div>
-          <div className="text-3xl font-black text-amber-900 dark:text-amber-100">
-            {statusCounts.waiting_on_third_party}
+          <div className="flex items-baseline gap-2">
+            <span className={`text-3xl font-black ${cumplimientoPorcentaje >= 80 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+              {cumplimientoPorcentaje}%
+            </span>
+            <span className="text-xs font-semibold text-slate-400">
+              en plazo legal
+            </span>
           </div>
-          <p className="text-xs font-semibold text-amber-700 dark:text-amber-300 mt-2 flex items-center gap-1">
-            <span>⚠️</span> {thirdPartyList.length} entidad(es) retenedora(s)
+          <div className="flex items-center gap-2 text-[11px]">
+            <span className="text-red-500 font-bold">🔴 {expiredTasksCount} vencidas</span>
+            <span>•</span>
+            <span className="text-amber-500 font-bold">🟠 {criticalTasksCount} críticas</span>
+          </div>
+        </div>
+
+        {/* KPI 4: Retenciones / Terceros */}
+        <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 rounded-2xl p-5 shadow-xs space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-300">
+              Trámites Retenidos
+            </span>
+            <span className="w-8 h-8 rounded-xl bg-amber-100 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 flex items-center justify-center font-bold">
+              ⚠️
+            </span>
+          </div>
+          <div className="flex items-baseline gap-2">
+            <span className="text-3xl font-black text-slate-800 dark:text-slate-100">
+              {tareasRetenidasCount}
+            </span>
+            <span className="text-xs font-semibold text-slate-400">
+              esperando terceros
+            </span>
+          </div>
+          <p className="text-[11px] text-slate-400">
+            Pendientes de informes, facturas o proveedores
           </p>
         </div>
 
       </div>
 
-      {/* 2. GRID PRINCIPAL DE GRÁFICOS Y ANÁLISIS */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      {/* SECCIÓN 2 COLUMNAS: CARGA POR CONCEJALÍA + CUELLOS DE BOTELLA */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         
-        {/* PANEL IZQUIERDO: BarChart de Carga por Concejalía + Barras de Progreso */}
-        <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 rounded-2xl p-6 shadow-sm flex flex-col justify-between space-y-6">
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-lg font-extrabold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-                <svg className="w-5 h-5 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                </svg>
-                Volumen por Concejalía
-              </h3>
-            </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Distribución de carga de expedientes y tareas por área municipal.
-            </p>
+        {/* COLUMNA 1: DISTRIBUCIÓN POR CONCEJALÍA */}
+        <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 rounded-3xl p-6 shadow-xs space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-700/60 pb-3">
+            <h3 className="font-extrabold text-sm sm:text-base text-slate-800 dark:text-slate-100 flex items-center gap-2">
+              <span>🏛️</span> Carga de Trabajo por Concejalía
+            </h3>
+            <span className="text-xs font-semibold text-slate-400">
+              {concejaliasSorted.length} áreas activas
+            </span>
           </div>
 
-          {/* Gráfico de Barras Recharts */}
-          <div className="w-full h-64 sm:h-72">
-            {barChartData.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={barChartData} margin={{ top: 20, right: 15, left: -20, bottom: 40 }}>
-                  <XAxis 
-                    dataKey="concejalia" 
-                    tick={{ fill: '#64748b', fontSize: 11 }}
-                    interval={0}
-                    angle={-25}
-                    textAnchor="end"
-                  />
-                  <YAxis tick={{ fill: '#64748b', fontSize: 12 }} allowDecimals={false} />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: '#0f172a',
-                      borderColor: '#334155',
-                      borderRadius: '0.75rem',
-                      color: '#f8fafc',
-                      fontSize: '12px'
-                    }}
-                    cursor={{ fill: 'rgba(148, 163, 184, 0.1)' }}
-                  />
-                  <Bar dataKey="count" name="Trámites Totales" radius={[6, 6, 0, 0]}>
-                    {barChartData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+          <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
+            {concejaliasSorted.length === 0 ? (
+              <p className="text-xs text-slate-400 italic text-center py-6">No hay expedientes en el periodo seleccionado.</p>
             ) : (
-              <div className="h-full flex items-center justify-center text-slate-400 text-sm italic">
-                No existen datos registrados para graficar.
-              </div>
-            )}
-          </div>
+              concejaliasSorted.map(([cName, stats]) => {
+                const cStyle = getConcejaliaStyle(cName);
+                const percent = totalExpedientes > 0 ? Math.round((stats.total / totalExpedientes) * 100) : 0;
 
-          {/* Lista Visual de Avance por Concejalía */}
-          {barChartData.length > 0 && (
-            <div className="border-t border-slate-100 dark:border-slate-700/60 pt-4 space-y-3">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                Porcentaje de Avance por Concejalía
-              </h4>
-              <div className="space-y-2.5 max-h-48 overflow-y-auto pr-1">
-                {barChartData.map((item) => {
-                  const style = getConcejaliaStyle(item.concejalia);
-                  return (
-                    <div key={item.concejalia} className="space-y-1">
-                      <div className="flex items-center justify-between text-xs font-medium">
-                        <span className="flex items-center gap-2 truncate">
-                          <span className={`w-2.5 h-2.5 rounded-full ${style.dot}`}></span>
-                          <span className="text-slate-700 dark:text-slate-200 font-semibold truncate">{item.concejalia}</span>
-                        </span>
-                        <span className="text-slate-500 dark:text-slate-400 text-xs shrink-0">
-                          {item.porcentaje}% ({item.count} ítems)
-                        </span>
+                return (
+                  <div key={cName} className="p-3.5 bg-slate-50 dark:bg-slate-700/30 rounded-2xl border border-slate-200/60 dark:border-slate-700/60 space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2 font-bold text-slate-800 dark:text-slate-100">
+                        <div className={`w-3 h-3 rounded-full ${cStyle.dot}`}></div>
+                        <span>{cName}</span>
                       </div>
-                      <div className="w-full bg-slate-100 dark:bg-slate-700/70 h-2 rounded-full overflow-hidden">
-                        <div 
-                          className="h-full rounded-full transition-all duration-500" 
-                          style={{ width: `${item.porcentaje}%`, backgroundColor: item.color }}
-                        ></div>
+                      <div className="flex items-center gap-2 font-mono text-[11px]">
+                        <span className="font-bold text-slate-700 dark:text-slate-200">{stats.total} exp. ({percent}%)</span>
+                        <span className="text-emerald-600 dark:text-emerald-400">({stats.completed} concluidos)</span>
                       </div>
                     </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+
+                    <div className="w-full bg-slate-200 dark:bg-slate-700 h-2 rounded-full overflow-hidden">
+                      <div
+                        className="bg-indigo-600 h-full rounded-full transition-all"
+                        style={{ width: `${percent}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
         </div>
 
-        {/* PANEL DERECHO: PieChart de Estado Operativo + Alerta de Cuellos de Botella */}
-        <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 rounded-2xl p-6 shadow-sm flex flex-col justify-between space-y-6">
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-lg font-extrabold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-                <svg className="w-5 h-5 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" />
-                </svg>
-                Estado Operativo de Trámites
-              </h3>
-            </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Distribución porcentual del estado de ejecución de las tareas.
-            </p>
+        {/* COLUMNA 2: DETECTOR DE CUELLOS DE BOTELLA / RETENCIONES */}
+        <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 rounded-3xl p-6 shadow-xs space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-700/60 pb-3">
+            <h3 className="font-extrabold text-sm sm:text-base text-slate-800 dark:text-slate-100 flex items-center gap-2">
+              <span>⚠️</span> Detector de Cuellos de Botella
+            </h3>
+            <span className="text-xs font-semibold text-amber-600 dark:text-amber-400">
+              {bottlenecksSorted.length} entidades retenedoras
+            </span>
           </div>
 
-          {/* Gráfico de Dona Recharts */}
-          <div className="w-full h-64 sm:h-72 relative flex items-center justify-center">
-            {pieChartData.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={pieChartData}
-                    cx="50%"
-                    cy="45%"
-                    innerRadius={60}
-                    outerRadius={95}
-                    paddingAngle={4}
-                    dataKey="value"
-                  >
-                    {pieChartData.map((entry, index) => (
-                      <Cell key={`pie-cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: '#0f172a',
-                      borderColor: '#334155',
-                      borderRadius: '0.75rem',
-                      color: '#f8fafc',
-                      fontSize: '12px'
-                    }}
-                  />
-                  <Legend 
-                    verticalAlign="bottom" 
-                    height={36} 
-                    formatter={(value) => (
-                      <span className="text-xs text-slate-600 dark:text-slate-300 font-semibold">
-                        {value}
-                      </span>
-                    )}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="h-full flex items-center justify-center text-slate-400 text-sm italic">
-                No hay tareas activas para mostrar en el gráfico.
+          <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
+            {bottlenecksSorted.length === 0 ? (
+              <div className="text-center py-10 space-y-2">
+                <span className="text-3xl">🎉</span>
+                <p className="text-xs font-bold text-slate-600 dark:text-slate-300">¡No hay expedientes retenidos actualmente!</p>
+                <p className="text-[11px] text-slate-400">Todos los trámites avanzan en plazo.</p>
               </div>
-            )}
-          </div>
-
-          {/* Sección de Análisis de Retenciones por Terceros */}
-          <div className="border-t border-slate-100 dark:border-slate-700/60 pt-4 space-y-3">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-amber-800 dark:text-amber-400 flex items-center justify-between">
-              <span>⚠️ Cuellos de Botella por Entidad</span>
-              <span className="text-slate-400 font-normal">({thirdPartyList.length} entidades)</span>
-            </h4>
-
-            {thirdPartyList.length > 0 ? (
-              <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
-                {thirdPartyList.map((item) => (
-                  <div key={item.entity} className="flex items-center justify-between p-2.5 rounded-xl bg-amber-50/60 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-800/40 text-xs">
-                    <span className="font-semibold text-slate-800 dark:text-slate-200 truncate flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0"></span>
-                      <span className="truncate">{item.entity}</span>
+            ) : (
+              bottlenecksSorted.map(([reason, stats]) => (
+                <div key={reason} className="p-3.5 bg-amber-50/50 dark:bg-amber-950/20 rounded-2xl border border-amber-200/80 dark:border-amber-800/50 space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-bold text-amber-900 dark:text-amber-200">
+                      {reason}
                     </span>
-                    <span className="font-bold px-2 py-0.5 rounded-md bg-amber-200/70 dark:bg-amber-900/60 text-amber-900 dark:text-amber-200 shrink-0">
-                      {item.count} {item.count === 1 ? 'retención' : 'retenciones'}
+                    <span className="font-bold text-amber-700 dark:text-amber-300 px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-900/60">
+                      {stats.count} {stats.count === 1 ? 'trámite' : 'trámites'}
                     </span>
                   </div>
-                ))}
-              </div>
-            ) : (
-              <div className="p-3 rounded-xl bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-200/80 dark:border-emerald-800/40 text-xs font-medium text-emerald-800 dark:text-emerald-300 flex items-center gap-2">
-                <span>🎉</span> Excelente: No existen tareas retenidas por terceros en este momento.
-              </div>
+
+                  <div className="space-y-1">
+                    {stats.tasks.slice(0, 3).map((t) => (
+                      <div
+                        key={t.id}
+                        onClick={() => onSelectTask(t)}
+                        className="text-[11px] text-slate-600 dark:text-slate-300 truncate hover:text-indigo-600 dark:hover:text-indigo-400 cursor-pointer flex items-center gap-1.5"
+                      >
+                        <span>•</span>
+                        <span className="font-semibold">{t.titulo || t.title}</span>
+                        {t.projectName && <span className="text-slate-400">({t.projectName})</span>}
+                      </div>
+                    ))}
+                    {stats.tasks.length > 3 && (
+                      <p className="text-[10px] text-slate-400 italic">
+                        + {stats.tasks.length - 3} trámites más...
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ))
             )}
           </div>
-
         </div>
 
       </div>

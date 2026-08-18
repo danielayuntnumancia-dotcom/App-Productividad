@@ -1,5 +1,16 @@
 export type TaskStatus = 'todo' | 'in_progress' | 'waiting_on_third_party' | 'completed';
 
+export interface ChecklistDocItem {
+  id: string;
+  name: string;
+  completed: boolean;
+  required?: boolean;
+  driveUrl?: string;
+  uploadedAt?: number;
+}
+
+export type DeadlineSeverity = 'safe' | 'warning' | 'critical' | 'expired' | 'none';
+
 export interface Tarea {
   id?: string;
   userId: string;
@@ -22,12 +33,15 @@ export interface Tarea {
   prioridad: 'baja' | 'media' | 'alta';
   concejalia?: string;
   
-  // Trazabilidad de bloqueos
+  // Trazabilidad de bloqueos y retenciones
   blockedBy?: string; // Departamento / Entidad retenedora
   blockingReason?: string; // Motivo / Trámite esperado
+  blockedSince?: number; // Timestamp cuando se retuvo
 
-  // Referencia documental externa
-  externalReference?: string; // Nº Expediente Gestiona o Ruta Local
+  // Integración con Google Drive y Referencias
+  driveFolderUrl?: string; // Enlace directo a carpeta de Google Drive
+  driveDocUrl?: string; // Enlace directo a documento de Google Drive
+  externalReference?: string; // Nº Expediente Sede / Gestiona o Ruta Local
 
   // Vinculación a Proyecto / Expediente
   projectId?: string;
@@ -40,6 +54,9 @@ export interface Tarea {
   parentProjectName?: string;
   isContratoMenor?: boolean;
   orderIndex?: number;
+  
+  // Control de Plazos Específicos
+  isBusinessDays?: boolean; // Cómputo en días hábiles
 }
 
 export interface Project {
@@ -57,7 +74,20 @@ export interface Project {
   notes?: string;
   notas?: string;
   createdAt?: any;
+  fecha_creacion?: number | null;
   userId?: string;
+
+  // Integración con Google Drive
+  driveFolderUrl?: string; // Carpeta raíz del expediente en Google Drive
+  sedeUrl?: string; // Enlace directo a la Sede Electrónica
+
+  // Check-list de Documentos Preceptivos
+  checklistDocs?: ChecklistDocItem[];
+
+  // Silencio Administrativo y Plazos Legales
+  silencioTipo?: 'positivo' | 'negativo';
+  silencioPlazoMeses?: number;
+  plazoDiasHabiles?: number;
 }
 
 export const generateExpedientCode = (): string => {

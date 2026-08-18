@@ -4,6 +4,7 @@ import { doc, updateDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 import CustomDatePicker from './CustomDatePicker';
 import { useConcejalias } from '../hooks/useConcejalias';
+import { getTaskDeadlineInfo, getRetentionWarning } from '../utils/deadlines';
 
 interface Props {
   tarea: Tarea;
@@ -15,6 +16,8 @@ export default function TaskDetailPanel({ tarea, onClose }: Props) {
   const panelRef = useRef<HTMLDivElement>(null);
   const [titulo, setTitulo] = useState(tarea.titulo);
   const [notas, setNotas] = useState(tarea.notas || tarea.notes || '');
+  const [driveFolderUrl, setDriveFolderUrl] = useState(tarea.driveFolderUrl || '');
+  const [isBusinessDays, setIsBusinessDays] = useState<boolean>(tarea.isBusinessDays ?? true);
 
   const getInitialStatus = (t: Tarea): TaskStatus => {
     if (t.status) return t.status;
@@ -117,6 +120,11 @@ export default function TaskDetailPanel({ tarea, onClose }: Props) {
       const calculatedDueDate = fechaVencimiento ? new Date(fechaVencimiento).getTime() : Date.now();
 
       const taskRef = doc(db, 'tareas', tarea.id);
+      const isRetained = status === 'waiting_on_third_party';
+      const blockedSinceVal = isRetained 
+        ? (tarea.blockedSince || Date.now())
+        : null;
+
       await updateDoc(taskRef, {
         titulo,
         notas,
@@ -129,8 +137,11 @@ export default function TaskDetailPanel({ tarea, onClose }: Props) {
         completada: status === 'completed',
         fecha_vencimiento: calculatedDueDate,
         prioridad,
-        blockedBy: status === 'waiting_on_third_party' ? blockedBy : '',
-        blockingReason: status === 'waiting_on_third_party' ? blockingReason : '',
+        blockedBy: isRetained ? blockedBy : '',
+        blockingReason: isRetained ? blockingReason : '',
+        blockedSince: blockedSinceVal,
+        driveFolderUrl: driveFolderUrl.trim(),
+        isBusinessDays,
         externalReference: externalReference.trim(),
         ...(concejalia ? { concejalia: concejalia as any } : { concejalia: null }),
       });
@@ -291,6 +302,32 @@ export default function TaskDetailPanel({ tarea, onClose }: Props) {
           ></textarea>
         </div>
 
+        {/* Google Drive Link */}
+        <div className="p-3.5 bg-blue-50/50 dark:bg-blue-950/20 border border-blue-200/80 dark:border-blue-800/50 rounded-2xl space-y-2">
+          <div className="flex items-center justify-between">
+            <label className="block text-xs font-bold uppercase tracking-wider text-blue-900 dark:text-blue-200">
+              📁 Carpeta de Google Drive (Documentación)
+            </label>
+            {driveFolderUrl.trim() && (
+              <a 
+                href={driveFolderUrl.trim()} 
+                target="_blank" 
+                rel="noreferrer"
+                className="px-2.5 py-1 bg-blue-600 text-white rounded-lg text-[11px] font-bold shadow-xs hover:bg-blue-700 transition-all flex items-center gap-1"
+              >
+                <span>🔗 Abrir Carpeta</span>
+              </a>
+            )}
+          </div>
+          <input 
+            type="url"
+            value={driveFolderUrl}
+            onChange={(e) => setDriveFolderUrl(e.target.value)}
+            className="w-full bg-white dark:bg-slate-900 border border-blue-200 dark:border-slate-700 rounded-xl px-3 py-2 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-xs"
+            placeholder="Pega aquí el enlace de Google Drive (https://drive.google.com/...)"
+          />
+        </div>
+
         {/* External Document Reference / Location */}
         <div>
           <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
@@ -313,28 +350,41 @@ export default function TaskDetailPanel({ tarea, onClose }: Props) {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
-          {/* Date */}
-          <div>
-            <CustomDatePicker 
-              label="Fecha límite"
-              value={fechaVencimiento}
-              onChange={(dateStr) => setFechaVencimiento(dateStr)}
-            />
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-4">
+            {/* Date */}
+            <div>
+              <CustomDatePicker 
+                label="Fecha límite"
+                value={fechaVencimiento}
+                onChange={(dateStr) => setFechaVencimiento(dateStr)}
+              />
+            </div>
+            
+            {/* Time (Minutes) */}
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Estimado (min)</label>
+              <input 
+                type="number"
+                min="1"
+                value={tiempoEstimado}
+                onChange={(e) => setTiempoEstimado(e.target.value)}
+                className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors"
+                placeholder="15"
+              />
+            </div>
           </div>
-          
-          {/* Time (Minutes) */}
-          <div>
-            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Estimado (min)</label>
-            <input 
-              type="number"
-              min="1"
-              value={tiempoEstimado}
-              onChange={(e) => setTiempoEstimado(e.target.value)}
-              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors"
-              placeholder="15"
+
+          {/* Toggle de Días Hábiles */}
+          <label className="flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-400 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={isBusinessDays}
+              onChange={(e) => setIsBusinessDays(e.target.checked)}
+              className="w-4 h-4 text-indigo-600 rounded border-slate-300 dark:border-slate-700"
             />
-          </div>
+            <span>Cómputo en días hábiles (descuenta fines de semana y festivos)</span>
+          </label>
         </div>
 
         {/* Priority */}

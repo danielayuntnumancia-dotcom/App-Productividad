@@ -9,6 +9,7 @@ import BulkTaskActionBar from './BulkTaskActionBar';
 import { useConcejalias } from '../hooks/useConcejalias';
 import { getConcejaliaStyle, getPriorityStyle, getPriorityBadgeClass } from '../utils/concejaliaColors';
 import { exportExpedientToPDF, exportExpedientToCSV, copyExpedientTasksToClipboard, exportConcejaliaReportToPDF, exportConcejaliaReportToCSV } from '../utils/exportUtils';
+import { getTaskDeadlineInfo, getRetentionWarning } from '../utils/deadlines';
 
 interface Props {
   user: User;
@@ -566,13 +567,36 @@ export default function ContratosMenoresView({ user, searchQuery = '', onSelectT
 
                               <div className="flex items-center gap-2 shrink-0">
                                 {getPriorityBadge(tarea.prioridad, (tarea as any).priority)}
+                                {(() => {
+                                  const dl = getTaskDeadlineInfo(tarea);
+                                  if (dl.severity !== 'none') {
+                                    return (
+                                      <span className={`text-[10px] px-2 py-0.5 rounded-md border font-bold ${dl.badgeClass}`}>
+                                        {dl.formattedText}
+                                      </span>
+                                    );
+                                  }
+                                  return null;
+                                })()}
+                                {tarea.driveFolderUrl && (
+                                  <a
+                                    href={tarea.driveFolderUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="px-2 py-0.5 bg-blue-50 dark:bg-blue-950/40 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 text-[11px] font-bold rounded border border-blue-200 dark:border-blue-800 flex items-center gap-1 transition-all"
+                                    title="Abrir carpeta en Google Drive"
+                                  >
+                                    <span>📁</span> Drive
+                                  </a>
+                                )}
                                 <span className="text-[11px] font-medium text-slate-400 bg-slate-100 dark:bg-slate-700/50 px-2 py-0.5 rounded">
                                   {tarea.estimatedTimeMin ? `${tarea.estimatedTimeMin} min` : tarea.tiempo_estimado}
                                 </span>
                                 <button
                                   onClick={(e) => handleDeleteTaskDirect(tarea.id!, e)}
                                   className="w-6 h-6 flex items-center justify-center rounded text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 transition-all shrink-0 cursor-pointer"
-                                  title="Eliminar tarea"
+                                  title="Eliminar trámite directamente"
                                 >
                                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                                 </button>

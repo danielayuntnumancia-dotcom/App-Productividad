@@ -8,6 +8,7 @@ import TemplateSelectorModal from './TemplateSelectorModal';
 import BulkTaskActionBar from './BulkTaskActionBar';
 import { getConcejaliaStyle, getConcejaliaBg, getPriorityStyle, getPriorityBadgeClass } from '../utils/concejaliaColors';
 import { useConcejalias } from '../hooks/useConcejalias';
+import { getTaskDeadlineInfo, getRetentionWarning } from '../utils/deadlines';
 
 interface Props {
   user: User;
@@ -294,6 +295,17 @@ export default function MiDiaView({ user, searchQuery = '', onSelectTask, onSele
               <div className="flex items-center gap-1.5 flex-wrap min-w-0">
                 {statusBadge}
                 {getPriorityBadge(tarea.prioridad, (tarea as any).priority)}
+                {(() => {
+                  const dl = getTaskDeadlineInfo(tarea);
+                  if (dl.severity !== 'none') {
+                    return (
+                      <span className={`text-[10px] px-2 py-0.5 rounded-md border font-bold ${dl.badgeClass}`}>
+                        {dl.formattedText}
+                      </span>
+                    );
+                  }
+                  return null;
+                })()}
                 {tarea.projectName && (
                   <span className="text-[10px] font-bold px-2 py-0.5 rounded-md border bg-slate-100 dark:bg-slate-700/70 text-slate-600 dark:text-slate-300 truncate max-w-[220px]">
                     📁 {tarea.expedientCode ? `${tarea.expedientCode} - ` : ''}{tarea.projectName}
@@ -315,6 +327,18 @@ export default function MiDiaView({ user, searchQuery = '', onSelectTask, onSele
               {tarea.titulo}
             </h3>
 
+            {(() => {
+              const ret = getRetentionWarning(tarea);
+              if (ret.isProlonged) {
+                return (
+                  <p className="text-xs font-bold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 px-2 py-1 rounded-md border border-amber-200 dark:border-amber-800">
+                    {ret.warningText}
+                  </p>
+                );
+              }
+              return null;
+            })()}
+
             {tarea.notas && (
               <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed transition-colors duration-300">
                 {tarea.notas}
@@ -331,6 +355,18 @@ export default function MiDiaView({ user, searchQuery = '', onSelectTask, onSele
               <span className="text-xs font-medium text-slate-500 dark:text-slate-400 bg-white/50 dark:bg-slate-800/50 px-2 py-1 rounded-md transition-colors duration-300">
                 {tarea.concejalia}
               </span>
+            )}
+            {tarea.driveFolderUrl && (
+              <a
+                href={tarea.driveFolderUrl}
+                target="_blank"
+                rel="noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="text-xs font-bold bg-blue-50 dark:bg-blue-950/40 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded-md border border-blue-200 dark:border-blue-800 flex items-center gap-1 transition-all"
+                title="Abrir carpeta en Google Drive"
+              >
+                <span>📁</span> Drive
+              </a>
             )}
             {tarea.fecha_vencimiento && (
               <span className={`text-xs font-medium bg-white/50 dark:bg-slate-800/50 px-2 py-1 rounded-md flex items-center gap-1 transition-colors duration-300 ${
