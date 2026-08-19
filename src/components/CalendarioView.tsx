@@ -49,7 +49,11 @@ export default function CalendarioView({ user, searchQuery = '', onSelectTask }:
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const tareasData: Tarea[] = [];
       snapshot.forEach((doc) => {
-        tareasData.push({ id: doc.id, ...doc.data() } as Tarea);
+        const data = doc.data();
+        if (data.isDeleted) return;
+        if (!data.isTemplate && !data.isConcejalia && !data.isProject) {
+          tareasData.push({ id: doc.id, ...data } as Tarea);
+        }
       });
       setTareas(tareasData);
     });

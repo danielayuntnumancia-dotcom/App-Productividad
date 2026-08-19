@@ -9,6 +9,8 @@ import BulkTaskActionBar from './BulkTaskActionBar';
 import { getConcejaliaStyle, getConcejaliaBg, getPriorityStyle, getPriorityBadgeClass } from '../utils/concejaliaColors';
 import { useConcejalias } from '../hooks/useConcejalias';
 import { getTaskDeadlineInfo, getRetentionWarning } from '../utils/deadlines';
+import { moveToTrashTask } from '../utils/trashUtils';
+import KanbanBoard from './KanbanBoard';
 
 interface Props {
   user: User;
@@ -24,6 +26,7 @@ export default function RegistroView({ user, searchQuery = '', onSelectTask }: P
   const [isCreatingTask, setIsCreatingTask] = useState(false);
   const [isCreatingExpediente, setIsCreatingExpediente] = useState(false);
   const [filter, setFilter] = useState<StatusFilterOption>('todas');
+  const [viewMode, setViewMode] = useState<'list' | 'kanban'>('list');
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
 
   useEffect(() => {
@@ -36,6 +39,7 @@ export default function RegistroView({ user, searchQuery = '', onSelectTask }: P
       const tareasData: Tarea[] = [];
       snapshot.forEach((doc) => {
         const data = doc.data();
+        if (data.isDeleted) return;
         if (!data.isTemplate && !data.isConcejalia && !data.isProject) {
           tareasData.push({ id: doc.id, ...data } as Tarea);
         }
@@ -105,11 +109,23 @@ export default function RegistroView({ user, searchQuery = '', onSelectTask }: P
 
   const handleDeleteTaskDirect = async (taskId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!window.confirm("¿Eliminar esta tarea definitivamente?")) return;
+    if (!window.confirm("¿Mover esta tarea a la papelera? Podrás recuperarla en la sección Papelera.")) return;
     try {
-      await deleteDoc(doc(db, 'tareas', taskId));
+      await moveToTrashTask(taskId);
     } catch (err) {
-      console.error("Error deleting task directly: ", err);
+      console.error("Error moving task to trash: ", err);
+    }
+  };
+
+  const handleUpdateTaskStatus = async (taskId: string, newStatus: string) => {
+    try {
+      const taskRef = doc(db, 'tareas', taskId);
+      await updateDoc(taskRef, {
+        status: newStatus,
+        completada: newStatus === 'completed'
+      });
+    } catch (error) {
+      console.error("Error updating task status: ", error);
     }
   };
 
@@ -223,6 +239,24 @@ export default function RegistroView({ user, searchQuery = '', onSelectTask }: P
               </button>
             ))}
           </div>
+
+          {/* VIEW TOGGLE */}
+          <div className="flex bg-slate-200/60 dark:bg-slate-800/80 p-1 rounded-xl border border-slate-300/50 dark:border-slate-700/50 shrink-0">
+            <button 
+              onClick={() => setViewMode('list')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${viewMode === 'list' ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+              Lista
+            </button>
+            <button 
+              onClick={() => setViewMode('kanban')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${viewMode === 'kanban' ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"></path></svg>
+              Tablero
+            </button>
+          </div>
         </section>
 
         {/* ADD TASK & EXPEDIENTE BUTTONS */}
@@ -245,13 +279,15 @@ export default function RegistroView({ user, searchQuery = '', onSelectTask }: P
           </button>
         </section>
 
-        {/* TASK LIST */}
-        <section className="flex flex-col gap-3 animate-fade-in-up" style={{ animationDelay: '100ms' }}>
+        {/* TASK LIST OR KANBAN BOARD */}
+        <section className={`flex flex-col gap-3 animate-fade-in-up ${viewMode === 'kanban' ? 'flex-1 min-h-[60vh]' : ''}`} style={{ animationDelay: '100ms' }}>
           {filteredTareas.length === 0 ? (
             <div className="text-center py-12 bg-white dark:bg-slate-800 rounded-3xl border border-slate-100 dark:border-slate-700 transition-colors duration-300">
               <svg className="w-16 h-16 mx-auto text-slate-300 dark:text-slate-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg>
               <p className="text-slate-500 dark:text-slate-400 font-medium">No se encontraron tareas con el filtro seleccionado</p>
             </div>
+          ) : viewMode === 'kanban' ? (
+            <KanbanBoard tasks={filteredTareas} onTaskStatusChange={handleUpdateTaskStatus} onSelectTask={onSelectTask} />
           ) : (
             filteredTareas.map((tarea) => {
               const rawDueDate = tarea.dueDate || tarea.fecha_vencimiento;

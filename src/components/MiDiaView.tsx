@@ -9,6 +9,8 @@ import BulkTaskActionBar from './BulkTaskActionBar';
 import { getConcejaliaStyle, getConcejaliaBg, getPriorityStyle, getPriorityBadgeClass } from '../utils/concejaliaColors';
 import { useConcejalias } from '../hooks/useConcejalias';
 import { getTaskDeadlineInfo, getRetentionWarning } from '../utils/deadlines';
+import { moveToTrashTask, moveToTrashExpediente } from '../utils/trashUtils';
+import KanbanBoard from './KanbanBoard';
 
 interface Props {
   user: User;
@@ -22,10 +24,12 @@ type MiDiaStatusFilter = 'todas' | 'todo' | 'in_progress' | 'waiting_on_third_pa
 export default function MiDiaView({ user, searchQuery = '', onSelectTask, onSelectProject }: Props) {
   const concejaliasList = useConcejalias(user.uid);
   const [tareas, setTareas] = useState<Tarea[]>([]);
+  const [allUserTareas, setAllUserTareas] = useState<Tarea[]>([]);
   const [expandedExpedientes, setExpandedExpedientes] = useState<Set<string>>(new Set());
   const [isCreatingTask, setIsCreatingTask] = useState(false);
   const [isCreatingExpediente, setIsCreatingExpediente] = useState(false);
   const [filterStatus, setFilterStatus] = useState<MiDiaStatusFilter>('todas');
+  const [viewMode, setViewMode] = useState<'list' | 'kanban'>('list');
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
 
   useEffect(() => {
@@ -37,8 +41,11 @@ export default function MiDiaView({ user, searchQuery = '', onSelectTask, onSele
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const tareasData: Tarea[] = [];
       snapshot.forEach((doc) => {
-        tareasData.push({ id: doc.id, ...doc.data() } as Tarea);
+        const data = doc.data();
+        if (data.isDeleted) return;
+        tareasData.push({ id: doc.id, ...data } as Tarea);
       });
+      setAllUserTareas(tareasData);
       // Filtrar tareas que pertenecen a "Mi Día" (isInMyDay !== false) y no están completadas
       const valid = tareasData.filter(t => !(t as any).isTemplate && !(t as any).isConcejalia && !(t as any).isProject && (t.isInMyDay !== false) && t.status !== 'completed' && !t.completada);
       setTareas(valid);
@@ -68,28 +75,35 @@ export default function MiDiaView({ user, searchQuery = '', onSelectTask, onSele
     }
   };
 
+  const handleUpdateTaskStatus = async (taskId: string, newStatus: string) => {
+    try {
+      const taskRef = doc(db, 'tareas', taskId);
+      await updateDoc(taskRef, {
+        status: newStatus,
+        completada: newStatus === 'completed'
+      });
+    } catch (error) {
+      console.error("Error updating task status: ", error);
+    }
+  };
+
   const handleDeleteTaskDirect = async (taskId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!window.confirm("¿Eliminar esta tarea definitivamente?")) return;
+    if (!window.confirm("¿Mover esta tarea a la papelera? Podrás recuperarla en la sección Papelera.")) return;
     try {
-      await deleteDoc(doc(db, 'tareas', taskId));
+      await moveToTrashTask(taskId);
     } catch (err) {
-      console.error("Error deleting task directly: ", err);
+      console.error("Error moving task to trash: ", err);
     }
   };
 
   const handleDeleteExpedienteDirect = async (projectId: string, projectName: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!window.confirm(`¿Eliminar el expediente "${projectName}" y TODAS sus tareas asociadas?`)) return;
+    if (!window.confirm(`¿Mover el expediente "${projectName}" y sus tareas a la papelera? Podrás recuperarlo desde la Papelera.`)) return;
     try {
-      const batch = writeBatch(db);
-      const expedienteTasks = tareas.filter(t => t.projectId === projectId);
-      expedienteTasks.forEach(t => {
-        if (t.id) batch.delete(doc(db, 'tareas', t.id));
-      });
-      await batch.commit();
+      await moveToTrashExpediente(projectId, allUserTareas);
     } catch (err) {
-      console.error("Error deleting expediente batch: ", err);
+      console.error("Error moving expediente to trash: ", err);
     }
   };
 
@@ -428,6 +442,24 @@ export default function MiDiaView({ user, searchQuery = '', onSelectTask, onSele
                 </button>
               ))}
             </div>
+
+            {/* VIEW TOGGLE */}
+            <div className="flex bg-slate-200/60 dark:bg-slate-800/80 p-1 rounded-xl border border-slate-300/50 dark:border-slate-700/50 shrink-0">
+              <button 
+                onClick={() => setViewMode('list')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${viewMode === 'list' ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+                Lista
+              </button>
+              <button 
+                onClick={() => setViewMode('kanban')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${viewMode === 'kanban' ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"></path></svg>
+                Tablero
+              </button>
+            </div>
           </div>
           
           <div className="flex flex-col gap-2">
@@ -466,13 +498,15 @@ export default function MiDiaView({ user, searchQuery = '', onSelectTask, onSele
           </button>
         </section>
 
-        {/* MAIN TASK LIST */}
-        <section className="flex-1 flex flex-col gap-6 animate-fade-in-up" style={{ animationDelay: '100ms' }}>
+        {/* MAIN TASK LIST OR KANBAN BOARD */}
+        <section className={`flex-1 flex flex-col gap-6 animate-fade-in-up ${viewMode === 'kanban' ? 'min-h-[60vh]' : ''}`} style={{ animationDelay: '100ms' }}>
           {filteredTareas.length === 0 ? (
             <div className="flex-1 flex flex-col items-center justify-center py-16 bg-white dark:bg-slate-800 rounded-3xl border border-slate-100 dark:border-slate-700 transition-colors duration-300">
               <svg className="w-16 h-16 text-slate-300 dark:text-slate-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M5 13l4 4L19 7"></path></svg>
               <p className="text-slate-500 dark:text-slate-400 font-medium text-center">No hay tareas que coincidan con el filtro seleccionado</p>
             </div>
+          ) : viewMode === 'kanban' ? (
+            <KanbanBoard tasks={filteredTareas} onTaskStatusChange={handleUpdateTaskStatus} onSelectTask={onSelectTask} />
           ) : (
             <div className="space-y-6">
               
@@ -522,7 +556,7 @@ export default function MiDiaView({ user, searchQuery = '', onSelectTask, onSele
                                       onClick={(e) => {
                                         if (onSelectProject) {
                                           e.stopPropagation();
-                                          onSelectProject({ id: exp.id, name: exp.name, type: 'custom', concejalia: exp.concejalia, status: 'active', expedientCode: exp.code });
+                                          onSelectProject({ id: exp.id, name: exp.name, type: 'custom', concejalia: exp.concejalia, status: 'active', expedientCode: exp.code, userId: user.uid });
                                         }
                                       }}
                                     >

@@ -237,7 +237,7 @@ export default function ExpedienteBuilderModal({
       const expCode = generateExpedientCode();
 
       // ACCIÓN A: Guardar la cabecera del proyecto en la colección autorizada 'tareas' con isProject: true
-      const projectRef = doc(collection(db, 'tareas'));
+      const projectRef = doc(db, 'tareas', generatedProjectId);
       batch.set(projectRef, {
         isProject: true,
         id: generatedProjectId,

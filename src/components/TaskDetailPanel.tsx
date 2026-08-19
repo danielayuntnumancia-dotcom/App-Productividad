@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Tarea, TaskStatus } from '../types';
 import { doc, updateDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
-import { db } from '../firebaseConfig';
+import { db, auth } from '../firebaseConfig';
 import CustomDatePicker from './CustomDatePicker';
 import { useConcejalias } from '../hooks/useConcejalias';
 import { getTaskDeadlineInfo, getRetentionWarning } from '../utils/deadlines';
+import { moveToTrashTask } from '../utils/trashUtils';
 
 interface Props {
   tarea: Tarea;
@@ -12,7 +13,8 @@ interface Props {
 }
 
 export default function TaskDetailPanel({ tarea, onClose }: Props) {
-  const concejaliasList = useConcejalias(tarea.userId);
+  const effectiveUserId = tarea.userId || auth.currentUser?.uid || '';
+  const concejaliasList = useConcejalias(effectiveUserId);
   const panelRef = useRef<HTMLDivElement>(null);
   const [titulo, setTitulo] = useState(tarea.titulo);
   const [notas, setNotas] = useState(tarea.notas || tarea.notes || '');
@@ -155,9 +157,9 @@ export default function TaskDetailPanel({ tarea, onClose }: Props) {
 
   const handleDelete = async () => {
     if (!tarea.id) return;
-    if (!window.confirm('¿Eliminar esta tarea?')) return;
+    if (!window.confirm('¿Mover esta tarea a la papelera? Podrás recuperarla desde la Papelera.')) return;
     try {
-      await deleteDoc(doc(db, 'tareas', tarea.id));
+      await moveToTrashTask(tarea.id);
       onClose();
     } catch (error) {
       console.error("Error deleting task: ", error);

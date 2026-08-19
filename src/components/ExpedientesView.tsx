@@ -11,6 +11,8 @@ import { getConcejaliaStyle, getPriorityStyle, getPriorityBadgeClass } from '../
 import { exportExpedientToPDF, exportExpedientToCSV, copyExpedientTasksToClipboard, exportConcejaliaReportToPDF, exportConcejaliaReportToCSV } from '../utils/exportUtils';
 import { useConcejalias } from '../hooks/useConcejalias';
 import { getTaskDeadlineInfo, getRetentionWarning } from '../utils/deadlines';
+import { moveToTrashTask, moveToTrashExpediente } from '../utils/trashUtils';
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface Props {
   user: User;
@@ -51,7 +53,9 @@ export default function ExpedientesView({ user, searchQuery = '', onSelectTask, 
       const projData: Project[] = [];
       snapshot.forEach((d) => {
         const data = d.data();
-        projData.push({ id: data.projectId || data.id || d.id, ...data } as Project);
+        if (data.isDeleted) return;
+        // firestoreDocId = ID físico real del doc en Firestore (puede diferir de projectId en docs antiguos)
+        projData.push({ id: data.projectId || data.id || d.id, firestoreDocId: d.id, ...data } as Project);
       });
       setProjects(projData);
     });
@@ -70,6 +74,7 @@ export default function ExpedientesView({ user, searchQuery = '', onSelectTask, 
       const taskData: Tarea[] = [];
       snapshot.forEach((d) => {
         const data = d.data();
+        if (data.isDeleted) return;
         if (!data.isTemplate && !data.isConcejalia && !data.isProject) {
           taskData.push({ id: d.id, ...data } as Tarea);
         }
@@ -107,27 +112,21 @@ export default function ExpedientesView({ user, searchQuery = '', onSelectTask, 
 
   const handleDeleteTaskDirect = async (taskId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!window.confirm("¿Eliminar esta tarea definitivamente?")) return;
+    if (!window.confirm("¿Mover esta tarea a la papelera? Podrás recuperarla en la sección Papelera.")) return;
     try {
-      await deleteDoc(doc(db, 'tareas', taskId));
+      await moveToTrashTask(taskId);
     } catch (err) {
-      console.error("Error deleting task directly: ", err);
+      console.error("Error moving task to trash: ", err);
     }
   };
 
-  const handleDeleteExpedienteDirect = async (projectId: string, projectName: string, e: React.MouseEvent) => {
+  const handleDeleteExpedienteDirect = async (projectId: string, projectName: string, e: React.MouseEvent, firestoreDocId?: string) => {
     e.stopPropagation();
-    if (!window.confirm(`¿Eliminar el expediente "${projectName}" y TODAS sus tareas asociadas?`)) return;
+    if (!window.confirm(`¿Mover el expediente "${projectName}" y todas sus tareas a la papelera? Podrás recuperarlo desde la Papelera.`)) return;
     try {
-      const batch = writeBatch(db);
-      const expedienteTasks = allTareas.filter(t => t.projectId === projectId);
-      expedienteTasks.forEach(t => {
-        if (t.id) batch.delete(doc(db, 'tareas', t.id));
-      });
-      batch.delete(doc(db, 'tareas', projectId));
-      await batch.commit();
+      await moveToTrashExpediente(projectId, allTareas, firestoreDocId);
     } catch (err) {
-      console.error("Error deleting expediente batch: ", err);
+      console.error("Error moving expediente to trash: ", err);
     }
   };
 
@@ -179,6 +178,7 @@ export default function ExpedientesView({ user, searchQuery = '', onSelectTask, 
   // Filtrado de proyectos por Estado e Identificación de Contratos Menores
   const getProjectEffectiveStatus = (proj: Project): 'active' | 'completed' | 'archived' => {
     if (proj.status === 'archived') return 'archived';
+    if (proj.status === 'completed') return 'completed';
     const projTasks = allTareas.filter((t) => t.projectId === proj.id);
     if (projTasks.length > 0 && projTasks.every((t) => t.status === 'completed' || t.completada)) {
       return 'completed';
@@ -605,7 +605,7 @@ export default function ExpedientesView({ user, searchQuery = '', onSelectTask, 
                         </button>
                         <button
                           type="button"
-                          onClick={(e) => handleDeleteExpedienteDirect(project.id!, project.name, e)}
+                          onClick={(e) => handleDeleteExpedienteDirect(project.id!, project.name, e, project.firestoreDocId)}
                           className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 transition-all cursor-pointer"
                           title="Eliminar este expediente y sus tareas"
                         >
@@ -616,9 +616,17 @@ export default function ExpedientesView({ user, searchQuery = '', onSelectTask, 
                   </div>
 
                   {/* NIVEL 3: TAREAS HIJAS (EXPANDIBLE) */}
-                  {isExpanded && (
-                    <div className="border-t border-slate-100 dark:border-slate-700 p-4 bg-slate-50/50 dark:bg-slate-900/30 space-y-2">
-                      {projectTasks.length === 0 ? (
+                  <AnimatePresence>
+                    {isExpanded && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="overflow-hidden"
+                      >
+                        <div className="border-t border-slate-100 dark:border-slate-700 p-4 bg-slate-50/50 dark:bg-slate-900/30 space-y-2">
+                          {projectTasks.length === 0 ? (
                         <p className="text-xs text-slate-400 dark:text-slate-500 italic py-2 text-center">
                           No hay tareas registradas en este expediente
                         </p>
@@ -735,7 +743,9 @@ export default function ExpedientesView({ user, searchQuery = '', onSelectTask, 
                         </div>
                       )}
                     </div>
-                  )}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
               );
             };
@@ -873,9 +883,17 @@ export default function ExpedientesView({ user, searchQuery = '', onSelectTask, 
                   </div>
 
                   {/* LISTA DE SUB-CONTRATOS MENORES ANIDADOS (NIVEL 2 Y 3) */}
-                  {isExpanded && (
-                    <div className="p-4 sm:p-6 bg-white/80 dark:bg-slate-900/60 border-t-2 border-amber-300 dark:border-amber-700/60 space-y-4">
-                      <div className="flex items-center justify-between">
+                  <AnimatePresence>
+                    {isExpanded && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="overflow-hidden"
+                      >
+                        <div className="p-4 sm:p-6 bg-white/80 dark:bg-slate-900/60 border-t-2 border-amber-300 dark:border-amber-700/60 space-y-4">
+                          <div className="flex items-center justify-between">
                         <h4 className="text-xs font-bold uppercase tracking-wider text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
                           <span>📜</span> Sub-Contratos Menores asociados ({childCMs.length}):
                         </h4>
@@ -906,8 +924,10 @@ export default function ExpedientesView({ user, searchQuery = '', onSelectTask, 
                         </div>
                       )}
                     </div>
-                  )}
-                </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
               );
             };
 
@@ -962,11 +982,21 @@ export default function ExpedientesView({ user, searchQuery = '', onSelectTask, 
                       </div>
 
                       {/* CONTRATOS MENORES DESPLEGADOS */}
-                      {isSubfolderExpanded && (
-                        <div className="p-4 pt-2 border-t border-amber-200 dark:border-amber-800/50 space-y-4">
-                          {standaloneCMProjects.map((cmProj) => renderProjectCard(cmProj))}
-                        </div>
-                      )}
+                      <AnimatePresence>
+                        {isSubfolderExpanded && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            transition={{ duration: 0.2 }}
+                            className="overflow-hidden"
+                          >
+                            <div className="p-4 pt-2 border-t border-amber-200 dark:border-amber-800/50 space-y-4">
+                              {standaloneCMProjects.map((cmProj) => renderProjectCard(cmProj))}
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
                     </div>
                   )}
 

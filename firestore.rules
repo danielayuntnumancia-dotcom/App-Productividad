@@ -2,16 +2,27 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /tareas/{taskId} {
-      allow read, delete: if request.auth != null && request.auth.uid == resource.data.userId;
-      allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
-      allow update: if request.auth != null && request.auth.uid == resource.data.userId && request.auth.uid == request.resource.data.userId;
+    // Reglas para la colección 'tareas' (que también incluye proyectos y carpetas)
+    match /tareas/{documentId} {
+      // Un usuario solo puede leer o eliminar un documento si le pertenece explícitamente
+      allow read, delete: if request.auth != null && resource.data.userId == request.auth.uid;
+      
+      // Al crear, es obligatorio que el campo userId coincida con el UID del usuario autenticado
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      
+      // Al actualizar, el documento original debe pertenecerle y no puede cambiar el userId
+      allow update: if request.auth != null 
+                    && resource.data.userId == request.auth.uid
+                    && request.resource.data.userId == request.auth.uid;
     }
 
-    match /projects/{projectId} {
-      allow read, delete: if request.auth != null && request.auth.uid == resource.data.userId;
-      allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
-      allow update: if request.auth != null && request.auth.uid == resource.data.userId && request.auth.uid == request.resource.data.userId;
+    // Reglas para proyectos antiguos (por si quedan restos)
+    match /projects/{documentId} {
+      allow read, delete: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      allow update: if request.auth != null 
+                    && resource.data.userId == request.auth.uid
+                    && request.resource.data.userId == request.auth.uid;
     }
   }
 }

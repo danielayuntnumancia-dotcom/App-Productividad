@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { collection, query, where, onSnapshot, doc, writeBatch, updateDoc, deleteDoc, addDoc } from 'firebase/firestore';
-import { db } from '../firebaseConfig';
+import { db, auth } from '../firebaseConfig';
 import { Project, Tarea, TaskStatus } from '../types';
 import CustomDatePicker from './CustomDatePicker';
 import MacroExpedienteModal from './MacroExpedienteModal';
@@ -10,6 +10,7 @@ import { getConcejaliaStyle } from '../utils/concejaliaColors';
 import { exportExpedientToPDF, exportExpedientToCSV, sortExpedientTasksNaturally, copyExpedientTasksToClipboard } from '../utils/exportUtils';
 import { getDefaultChecklistForType, getTaskDeadlineInfo } from '../utils/deadlines';
 import { ChecklistDocItem, generateExpedientCode } from '../types';
+import { moveToTrashTask, moveToTrashExpediente } from '../utils/trashUtils';
 
 interface Props {
   project: Project;
@@ -18,7 +19,8 @@ interface Props {
 
 export default function ExpedienteDetailPanel({ project, onClose }: Props) {
   const panelRef = useRef<HTMLDivElement>(null);
-  const concejaliasList = useConcejalias(project.userId);
+  const effectiveUserId = project.userId || auth.currentUser?.uid || '';
+  const concejaliasList = useConcejalias(effectiveUserId);
 
   const [projectName, setProjectName] = useState(project.name);
   const [concejalia, setConcejalia] = useState(project.concejalia || '');
@@ -64,19 +66,40 @@ export default function ExpedienteDetailPanel({ project, onClose }: Props) {
 
   const [fechaVencimiento, setFechaVencimiento] = useState<string>('');
 
+  // Sincronizar todos los estados cuando cambie el proyecto recibido
+  useEffect(() => {
+    setProjectName(project.name);
+    setConcejalia(project.concejalia || '');
+    setLinkedExpedientId(project.linkedExpedientId || '');
+    setNotas(project.notas || project.notes || '');
+    setProjectStatus(project.status || 'active');
+    setDriveFolderUrl(project.driveFolderUrl || '');
+    setSedeUrl(project.sedeUrl || '');
+    setChecklistDocs(
+      project.checklistDocs && project.checklistDocs.length > 0
+        ? project.checklistDocs
+        : getDefaultChecklistForType(project.isContratoMenor ? 'contrato_menor' : 'general')
+    );
+    setEditedTitles({});
+    setEditedMinutes({});
+    setEditedStatuses({});
+    setFechaVencimiento('');
+  }, [project.id, project.name]);
+
   // Escuchar otros proyectos existentes para el selector de vinculación
   useEffect(() => {
-    if (!project?.userId) return;
+    if (!effectiveUserId) return;
 
     const q = query(
       collection(db, 'tareas'),
-      where('userId', '==', project.userId)
+      where('userId', '==', effectiveUserId)
     );
 
     const unsub = onSnapshot(q, (snapshot) => {
       const projMap: Record<string, { id: string; name: string; code: string }> = {};
       snapshot.forEach((d) => {
         const data = d.data();
+        if (data.isDeleted) return;
         if (data.isProject && (data.id !== project.id && data.projectId !== project.id)) {
           projMap[data.id || d.id] = {
             id: data.id || d.id,
@@ -97,15 +120,15 @@ export default function ExpedienteDetailPanel({ project, onClose }: Props) {
     });
 
     return () => unsub();
-  }, [project?.userId, project?.id]);
+  }, [effectiveUserId, project?.id]);
 
   // Escuchar sub-contratos menores si este proyecto es un Macro-Expediente
   useEffect(() => {
-    if (!project?.id || !project?.userId) return;
+    if (!project?.id || !effectiveUserId) return;
 
     const q = query(
       collection(db, 'tareas'),
-      where('userId', '==', project.userId),
+      where('userId', '==', effectiveUserId),
       where('isProject', '==', true),
       where('parentProjectId', '==', project.id)
     );
@@ -114,35 +137,39 @@ export default function ExpedienteDetailPanel({ project, onClose }: Props) {
       const list: Project[] = [];
       snapshot.forEach((d) => {
         const data = d.data();
+        if (data.isDeleted) return;
         list.push({ id: data.projectId || data.id || d.id, ...data } as Project);
       });
       setChildProjects(list);
     });
 
     return () => unsub();
-  }, [project?.id, project?.userId]);
+  }, [project?.id, effectiveUserId]);
 
   // Escuchar en tiempo real las tareas del expediente
   useEffect(() => {
     if (!project?.id) return;
 
-    const q = project.userId
-      ? query(collection(db, 'tareas'), where('userId', '==', project.userId), where('projectId', '==', project.id))
+    const q = effectiveUserId
+      ? query(collection(db, 'tareas'), where('userId', '==', effectiveUserId), where('projectId', '==', project.id))
       : query(collection(db, 'tareas'), where('projectId', '==', project.id));
 
     const unsub = onSnapshot(q, (snapshot) => {
       const taskList: Tarea[] = [];
       snapshot.forEach((d) => {
         const data = d.data();
-        if (!data.isTemplate && !data.isConcejalia && !data.isProject) {
+        if (!data.isTemplate && !data.isConcejalia && !data.isProject && !data.isDeleted) {
           taskList.push({ id: d.id, ...data } as Tarea);
         }
       });
       setTasks(taskList);
 
-      if (!fechaVencimiento && taskList.length > 0) {
-        setFechaVencimiento(getInitialProjectDueDateStr(taskList));
-      }
+      setFechaVencimiento((prev) => {
+        if (!prev && taskList.length > 0) {
+          return getInitialProjectDueDateStr(taskList);
+        }
+        return prev;
+      });
     });
 
     return () => unsub();
@@ -157,15 +184,17 @@ export default function ExpedienteDetailPanel({ project, onClose }: Props) {
     return () => window.removeEventListener('keydown', handleEsc);
   }, [onClose]);
 
-  // Eliminar una tarea individual del expediente
+  // Eliminar una tarea individual del expediente (Mover a Papelera)
   const handleDeleteSingleTask = async (taskId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!window.confirm("¿Eliminar esta tarea del expediente?")) return;
+    if (!window.confirm("¿Mover esta tarea a la papelera? Podrás recuperarla desde la sección Papelera.")) return;
     try {
-      await deleteDoc(doc(db, 'tareas', taskId));
+      await moveToTrashTask(taskId);
+      setSuccessMsg("¡Tarea movida a la papelera!");
+      setTimeout(() => setSuccessMsg(null), 2500);
     } catch (err: any) {
       console.error("Error deleting task from detail panel: ", err);
-      setErrorMsg("Error al eliminar la tarea.");
+      setErrorMsg("Error al mover la tarea a la papelera.");
     }
   };
 
@@ -184,8 +213,9 @@ export default function ExpedienteDetailPanel({ project, onClose }: Props) {
       const hasNumberPrefix = /^\d+[\.\s]/.test(rawTitle);
       const nextSeqNumber = tasks.length + 1;
       const formattedTitle = hasNumberPrefix ? rawTitle : `${nextSeqNumber}. ${rawTitle}`;
+      const resolvedUserId = effectiveUserId || auth.currentUser?.uid || (tasks.length > 0 ? tasks[0].userId : '');
 
-      await addDoc(collection(db, 'tareas'), {
+      const newTaskData: any = {
         projectId: project.id,
         projectName: projectName.trim() || project.name,
         concejalia: concejalia || project.concejalia || 'General',
@@ -204,9 +234,14 @@ export default function ExpedienteDetailPanel({ project, onClose }: Props) {
         dueDate: newDueDateMs,
         fecha_vencimiento: newDueDateMs,
         prioridad: 'media',
-        userId: project.userId,
         fecha_creacion: now
-      });
+      };
+
+      if (resolvedUserId) {
+        newTaskData.userId = resolvedUserId;
+      }
+
+      await addDoc(collection(db, 'tareas'), newTaskData);
 
       setNewTaskTitle('');
       setNewTaskMinutes('15');
@@ -229,13 +264,14 @@ export default function ExpedienteDetailPanel({ project, onClose }: Props) {
       const batch = writeBatch(db);
       const newName = projectName.trim();
       const newDueDateMs = fechaVencimiento ? new Date(fechaVencimiento).getTime() : null;
+      const resolvedUserId = effectiveUserId || auth.currentUser?.uid || (tasks.length > 0 ? tasks[0].userId : '');
 
       // 1. Actualizar todas las tareas hijas del expediente (respetando sus anotaciones existentes)
       tasks.forEach((t) => {
         if (!t.id) return;
         const tRef = doc(db, 'tareas', t.id);
 
-        const currentTitle = editedTitles[t.id] !== undefined ? editedTitles[t.id].trim() : (t.title || t.titulo);
+        const currentTitle = editedTitles[t.id] !== undefined ? editedTitles[t.id].trim() : (t.title || t.titulo || '');
         const currentMin = editedMinutes[t.id] !== undefined ? Number(editedMinutes[t.id]) || 15 : (t.estimatedTimeMin || 15);
         const currentStatus = editedStatuses[t.id] !== undefined ? editedStatuses[t.id] : (t.status || 'todo');
 
@@ -244,9 +280,9 @@ export default function ExpedienteDetailPanel({ project, onClose }: Props) {
 
         const updateData: any = {
           projectName: newName,
-          concejalia,
-          projectConcejalia: concejalia,
-          projectMasterCategory: concejalia,
+          concejalia: concejalia || '',
+          projectConcejalia: concejalia || '',
+          projectMasterCategory: concejalia || '',
           linkedExpedientId: linkedExpedientId || '',
           orderIndex: orderIdx,
           title: currentTitle,
@@ -257,35 +293,50 @@ export default function ExpedienteDetailPanel({ project, onClose }: Props) {
           completada: currentStatus === 'completed'
         };
 
+        if (resolvedUserId) {
+          updateData.userId = resolvedUserId;
+        }
+
         if (newDueDateMs) {
           updateData.dueDate = newDueDateMs;
           updateData.fecha_vencimiento = newDueDateMs;
         }
 
-        batch.update(tRef, updateData);
+        batch.set(tRef, updateData, { merge: true });
       });
 
       // 2. Guardar/fusionar cabecera de expediente con batch.set ({ merge: true })
-      if (project.id) {
-        const pRef = doc(db, 'tareas', project.id);
-        batch.set(pRef, {
+      const targetProjectId = project.id || project.projectId;
+      if (targetProjectId) {
+        const pRef = doc(db, 'tareas', targetProjectId);
+        const projectUpdateData: any = {
           isProject: true,
-          id: project.id,
-          projectId: project.id,
+          id: targetProjectId,
+          projectId: targetProjectId,
           name: newName,
           projectName: newName,
-          concejalia,
-          projectConcejalia: concejalia,
+          concejalia: concejalia || '',
+          projectConcejalia: concejalia || '',
+          projectMasterCategory: concejalia || '',
           linkedExpedientId: linkedExpedientId || '',
           status: projectStatus,
-          notas: notas.trim(),
-          notes: notas.trim(),
-          driveFolderUrl: driveFolderUrl.trim(),
-          sedeUrl: sedeUrl.trim(),
-          checklistDocs,
-          userId: project.userId,
-          ...(newDueDateMs ? { dueDate: newDueDateMs, fecha_vencimiento: newDueDateMs } : {})
-        }, { merge: true });
+          notas: (notas || '').trim(),
+          notes: (notas || '').trim(),
+          driveFolderUrl: (driveFolderUrl || '').trim(),
+          sedeUrl: (sedeUrl || '').trim(),
+          checklistDocs: checklistDocs || []
+        };
+
+        if (resolvedUserId) {
+          projectUpdateData.userId = resolvedUserId;
+        }
+
+        if (newDueDateMs) {
+          projectUpdateData.dueDate = newDueDateMs;
+          projectUpdateData.fecha_vencimiento = newDueDateMs;
+        }
+
+        batch.set(pRef, projectUpdateData, { merge: true });
       }
 
       await batch.commit();
@@ -319,11 +370,12 @@ export default function ExpedienteDetailPanel({ project, onClose }: Props) {
 
       const newExpedientCode = generateExpedientCode();
       const newProjectId = `proj_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      const resolvedUserId = effectiveUserId || auth.currentUser?.uid || (tasks.length > 0 ? tasks[0].userId : '');
       const batch = writeBatch(db);
 
       // Crear nuevo expediente
       const pRef = doc(db, 'tareas', newProjectId);
-      batch.set(pRef, {
+      const clonePayload: any = {
         ...project,
         id: newProjectId,
         projectId: newProjectId,
@@ -334,7 +386,13 @@ export default function ExpedienteDetailPanel({ project, onClose }: Props) {
         createdAt: Date.now(),
         fecha_creacion: Date.now(),
         checklistDocs: checklistDocs.map(c => ({ ...c, completed: false }))
-      });
+      };
+
+      if (resolvedUserId) {
+        clonePayload.userId = resolvedUserId;
+      }
+
+      batch.set(pRef, clonePayload);
 
       // Clonar tareas hijas con estado 'todo'
       tasks.forEach((t, idx) => {
@@ -342,8 +400,7 @@ export default function ExpedienteDetailPanel({ project, onClose }: Props) {
         const tRef = doc(db, 'tareas', newTaskId);
         const cleanTitle = t.title || t.titulo.split(' - ')[0] || t.titulo;
 
-        batch.set(tRef, {
-          userId: project.userId,
+        const taskClonePayload: any = {
           titulo: `${cleanTitle} - ${clonedName}`,
           title: cleanTitle,
           notas: t.notas || t.notes || '',
@@ -354,16 +411,22 @@ export default function ExpedienteDetailPanel({ project, onClose }: Props) {
           tiempo_estimado: `${t.estimatedTimeMin || 15}m`,
           isInMyDay: false,
           prioridad: t.prioridad || 'media',
-          concejalia: project.concejalia,
-          projectConcejalia: project.concejalia,
-          projectMasterCategory: project.concejalia,
+          concejalia: project.concejalia || '',
+          projectConcejalia: project.concejalia || '',
+          projectMasterCategory: project.concejalia || '',
           projectId: newProjectId,
           projectName: clonedName,
           expedientCode: newExpedientCode,
           orderIndex: t.orderIndex ?? idx + 1,
           createdAt: Date.now(),
           fecha_creacion: Date.now()
-        });
+        };
+
+        if (resolvedUserId) {
+          taskClonePayload.userId = resolvedUserId;
+        }
+
+        batch.set(tRef, taskClonePayload);
       });
 
       await batch.commit();
@@ -378,22 +441,23 @@ export default function ExpedienteDetailPanel({ project, onClose }: Props) {
   };
 
   const handleDeleteExpediente = async () => {
-    if (!window.confirm(`¿Eliminar definitivamente el expediente "${project.name}" y todas sus tareas (${tasks.length})?`)) {
+    const targetProjectId = project.id || (project as any).projectId;
+    if (!targetProjectId) {
+      setErrorMsg("ID de expediente no válido.");
+      return;
+    }
+
+    if (!window.confirm(`¿Mover el expediente "${project.name}" y todas sus tareas a la papelera? Podrás recuperarlo en cualquier momento desde la Papelera.`)) {
       return;
     }
 
     try {
-      const batch = writeBatch(db);
-      tasks.forEach((t) => {
-        if (t.id) batch.delete(doc(db, 'tareas', t.id));
-      });
-      if (project.id) {
-        batch.delete(doc(db, 'tareas', project.id));
-      }
-      await batch.commit();
+      // project.firestoreDocId = ID físico real del doc en Firestore
+      await moveToTrashExpediente(targetProjectId, tasks, project.firestoreDocId);
       onClose();
-    } catch (err) {
-      console.error("Error al eliminar expediente: ", err);
+    } catch (err: any) {
+      console.error("Error al mover expediente a papelera: ", err);
+      setErrorMsg(err?.message || "Error al eliminar expediente.");
     }
   };
 

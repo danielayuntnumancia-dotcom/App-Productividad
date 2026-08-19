@@ -61,15 +61,30 @@
   --spacing-margin-mobile: 20px;
   --spacing-gutter: 16px;
 
-  --font-headline-lg-mobile: Inter;
-  --font-headline-lg: Inter;
-  --font-body-md: Inter;
-  --font-body-lg: Inter;
-  --font-headline-md: Inter;
-  --font-label-sm: Inter;
-  --font-label-xs: Inter;
+  --font-sans: "Outfit", "Inter", sans-serif;
+  --font-headline-lg-mobile: "Outfit", "Inter", sans-serif;
+  --font-headline-lg: "Outfit", "Inter", sans-serif;
+  --font-body-md: "Outfit", "Inter", sans-serif;
+  --font-body-lg: "Outfit", "Inter", sans-serif;
+  --font-headline-md: "Outfit", "Inter", sans-serif;
+  --font-label-sm: "Outfit", "Inter", sans-serif;
+  --font-label-xs: "Outfit", "Inter", sans-serif;
+
+  /* FocusFlow 2.0 Brand Colors */
+  --color-brand-primary: #007AFF;
+  --color-brand-secondary: #00F5FF;
+  --color-brand-tertiary: #FFB800;
+  --color-brand-dark: #0A0C10;
+  --color-brand-darker: #050608;
+  --color-brand-surface: #151821;
+  --color-brand-surface-light: #1E222D;
 
   /* Since Tailwind 4 uses CSS vars directly, we'll keep it simple */
+}
+
+/* Global Font Apply */
+* {
+  font-family: var(--font-sans);
 }
 
 @keyframes fadeInUp {

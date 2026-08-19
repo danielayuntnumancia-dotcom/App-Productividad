@@ -10,15 +10,14 @@ import { useConcejalias } from '../hooks/useConcejalias';
 import { getConcejaliaStyle, getPriorityStyle, getPriorityBadgeClass } from '../utils/concejaliaColors';
 import { exportExpedientToPDF, exportExpedientToCSV, copyExpedientTasksToClipboard, exportConcejaliaReportToPDF, exportConcejaliaReportToCSV } from '../utils/exportUtils';
 import { getTaskDeadlineInfo, getRetentionWarning } from '../utils/deadlines';
+import { moveToTrashTask, moveToTrashExpediente } from '../utils/trashUtils';
 
 interface Props {
   user: User;
   searchQuery?: string;
-  onSelectTask: (tarea: Tarea) => void;
+  onSelectTask?: (task: Tarea) => void;
   onSelectProject?: (project: Project) => void;
 }
-
-type CMStatusFilter = 'todos' | 'activos' | 'completados';
 
 export default function ContratosMenoresView({ user, searchQuery = '', onSelectTask, onSelectProject }: Props) {
   const concejaliasList = useConcejalias(user.uid);
@@ -31,7 +30,7 @@ export default function ContratosMenoresView({ user, searchQuery = '', onSelectT
 
   // Filtros
   const [concejaliaFilter, setConcejaliaFilter] = useState<string>('todas');
-  const [statusFilter, setStatusFilter] = useState<CMStatusFilter>('todos');
+  const [statusFilter, setStatusFilter] = useState<'todos' | 'active' | 'completed'>('todos');
   const [copySuccessMsg, setCopySuccessMsg] = useState<string | null>(null);
 
   // Escuchar expedientes desde /tareas
@@ -46,7 +45,8 @@ export default function ContratosMenoresView({ user, searchQuery = '', onSelectT
       const projData: Project[] = [];
       snapshot.forEach((d) => {
         const data = d.data();
-        projData.push({ id: data.projectId || data.id || d.id, ...data } as Project);
+        if (data.isDeleted) return;
+        projData.push({ id: data.projectId || data.id || d.id, firestoreDocId: d.id, ...data } as Project);
       });
       setProjects(projData);
     });
@@ -65,6 +65,7 @@ export default function ContratosMenoresView({ user, searchQuery = '', onSelectT
       const taskData: Tarea[] = [];
       snapshot.forEach((d) => {
         const data = d.data();
+        if (data.isDeleted) return;
         if (!data.isTemplate && !data.isConcejalia && !data.isProject) {
           taskData.push({ id: d.id, ...data } as Tarea);
         }
@@ -99,27 +100,21 @@ export default function ContratosMenoresView({ user, searchQuery = '', onSelectT
 
   const handleDeleteTaskDirect = async (taskId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!window.confirm("¿Eliminar esta tarea definitivamente?")) return;
+    if (!window.confirm("¿Mover esta tarea a la papelera? Podrás recuperarla en la sección Papelera.")) return;
     try {
-      await deleteDoc(doc(db, 'tareas', taskId));
+      await moveToTrashTask(taskId);
     } catch (err) {
-      console.error("Error deleting task directly: ", err);
+      console.error("Error moving task to trash: ", err);
     }
   };
 
-  const handleDeleteExpedienteDirect = async (projectId: string, projectName: string, e: React.MouseEvent) => {
+  const handleDeleteExpedienteDirect = async (projectId: string, projectName: string, e: React.MouseEvent, firestoreDocId?: string) => {
     e.stopPropagation();
-    if (!window.confirm(`¿Eliminar el contrato menor "${projectName}" y TODAS sus tareas asociadas?`)) return;
+    if (!window.confirm(`¿Mover el contrato menor "${projectName}" y todas sus tareas a la papelera? Podrás recuperarlo desde la Papelera.`)) return;
     try {
-      const batch = writeBatch(db);
-      const expedienteTasks = allTareas.filter(t => t.projectId === projectId);
-      expedienteTasks.forEach(t => {
-        if (t.id) batch.delete(doc(db, 'tareas', t.id));
-      });
-      batch.delete(doc(db, 'tareas', projectId));
-      await batch.commit();
+      await moveToTrashExpediente(projectId, allTareas, firestoreDocId);
     } catch (err) {
-      console.error("Error deleting expediente batch: ", err);
+      console.error("Error moving contrato menor to trash: ", err);
     }
   };
 
@@ -162,6 +157,7 @@ export default function ContratosMenoresView({ user, searchQuery = '', onSelectT
   const cmProjects = Object.values(effectiveProjectsMap).filter(isContratoMenorProject);
 
   const getProjectEffectiveStatus = (proj: Project): 'active' | 'completed' => {
+    if (proj.status === 'completed') return 'completed';
     const projTasks = allTareas.filter((t) => t.projectId === proj.id);
     if (projTasks.length > 0 && projTasks.every((t) => t.status === 'completed' || t.completada)) {
       return 'completed';
@@ -480,7 +476,7 @@ export default function ContratosMenoresView({ user, searchQuery = '', onSelectT
 
                       <button
                         type="button"
-                        onClick={(e) => handleDeleteExpedienteDirect(project.id!, project.name, e)}
+                        onClick={(e) => handleDeleteExpedienteDirect(project.id!, project.name, e, project.firestoreDocId)}
                         className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 transition-all cursor-pointer"
                         title="Eliminar Contrato Menor completo"
                       >

@@ -72,6 +72,16 @@
 2. **Generador de Carátulas Físicas con Códigos QR:**
    - Impresión de carátula A4 y etiquetas de lomo para carpetas físicas de archivador con QR de acceso directo al expediente.
 
+## 🏗️ Escalabilidad y Arquitectura Backend (Cloud Functions)
+
+Actualmente, el proyecto está diseñado para funcionar 100% bajo la capa gratuita (**Plan Spark**) de Firebase (Autenticación, Firestore, Hosting). Las lógicas complejas como *tareas recurrentes, cálculos de plazos y auditorías* se evalúan de forma "perezosa" (Lazy Evaluation) directamente en el cliente (navegador/Front-end) utilizando transacciones para evitar colisiones.
+
+**Plan de Migración (Si se requiere un Servidor Dedicado / Plan Blaze):**
+Si en el futuro se necesita absoluta puntualidad temporal (independiente de la actividad de los usuarios) o enviar correos automatizados, la base de código está preparada para externalizar estas lógicas a **Firebase Cloud Functions**:
+1. **Cron Jobs:** Mover la evaluación de "Generar expedientes periódicos" del Front-end a una Cloud Function programada (`functions.pubsub.schedule('0 0 1 * *')`).
+2. **Triggers de Auditoría:** Mover la creación del historial de cambios a un disparador de base de datos (`functions.firestore.document('tareas/{taskId}').onUpdate(...)`) para que el backend lleve el registro de forma inviolable, sin gastar escrituras dobles desde el cliente.
+3. **Notificaciones Automatizadas:** Envío de correos o notificaciones push desde el servidor cuando falten 48h para un plazo crítico, sin depender de que la app se abra.
+
 ---
 
 *Proyecto sincronizado en GitHub y desplegado en producción en Firebase Hosting.*

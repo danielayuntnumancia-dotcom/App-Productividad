@@ -57,10 +57,18 @@ export interface Tarea {
   
   // Control de Plazos Específicos
   isBusinessDays?: boolean; // Cómputo en días hábiles
+
+  // Papelera y borrado suave
+  isDeleted?: boolean;
+  deletedAt?: number | null;
+  deletedType?: 'tarea' | 'expediente';
+  deletedProjectName?: string;
 }
 
 export interface Project {
   id?: string;
+  /** ID físico real del documento en Firestore (d.id del snapshot). Puede diferir de `id`/`projectId` en documentos antiguos. */
+  firestoreDocId?: string;
   name: string;
   type: string;
   concejalia: string;
@@ -88,6 +96,11 @@ export interface Project {
   silencioTipo?: 'positivo' | 'negativo';
   silencioPlazoMeses?: number;
   plazoDiasHabiles?: number;
+
+  // Papelera y borrado suave
+  isDeleted?: boolean;
+  deletedAt?: number | null;
+  deletedType?: 'expediente';
 }
 
 export const generateExpedientCode = (): string => {
