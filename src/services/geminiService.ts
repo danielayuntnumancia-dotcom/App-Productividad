@@ -1,13 +1,22 @@
 import { Tarea, Project } from '../types';
 
 const STORAGE_KEY = 'focusflow_ai_api_key';
+const STORAGE_KEY_LEGACY = 'focusflow_gemini_api_key';
 
 export function getStoredApiKey(): string {
   if (typeof window !== 'undefined') {
+    // Leer clave nueva
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved && saved.trim()) return saved.trim();
+    // Migrar clave antigua si existe (y no es una clave de Gemini AQ.)
+    const legacy = localStorage.getItem(STORAGE_KEY_LEGACY);
+    if (legacy && legacy.trim() && legacy.trim().startsWith('gsk_')) {
+      localStorage.setItem(STORAGE_KEY, legacy.trim());
+      localStorage.removeItem(STORAGE_KEY_LEGACY);
+      return legacy.trim();
+    }
   }
-  return import.meta.env.VITE_GROQ_API_KEY || import.meta.env.VITE_GEMINI_API_KEY || '';
+  return import.meta.env.VITE_GROQ_API_KEY || '';
 }
 
 export function saveStoredApiKey(key: string): void {
@@ -126,7 +135,9 @@ export async function askGemini(
         const errJson = await response.json().catch(() => ({}));
         const errMsg = errJson?.error?.message || `HTTP ${response.status}`;
         console.warn(`Fallo con modelo ${model}: ${errMsg}`);
-        lastError = new Error(errMsg);
+        lastError = new Error(`[${model}] ${errMsg}`);
+        // Si es 401 no tiene sentido reintentar con otros modelos
+        if (response.status === 401 || response.status === 403) break;
         continue;
       }
 
@@ -141,8 +152,8 @@ export async function askGemini(
   }
 
   const errMsg = lastError?.message || 'Error desconocido';
-  if (errMsg.includes('Invalid API Key') || errMsg.includes('401') || errMsg.includes('unauthorized')) {
-    throw new Error("Clave de API no válida. Comprueba que has introducido correctamente tu clave de Groq (empieza por 'gsk_...').");
+  if (errMsg.includes('invalid_api_key') || errMsg.includes('Invalid API Key') || errMsg.includes('401') || errMsg.includes('unauthorized')) {
+    throw new Error(`❌ Clave no válida. Asegúrate de que:\n1. La clave empieza por "gsk_"\n2. La has copiado completa sin espacios\n3. Tienes conexión a internet\n\nDetalle técnico: ${errMsg}`);
   }
-  throw new Error(`No se pudo conectar con el Asistente IA: ${errMsg}`);
+  throw new Error(`Error Groq: ${errMsg}`);
 }
