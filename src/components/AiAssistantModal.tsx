@@ -1,4 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { askGemini, ChatMessage, getStoredApiKey, saveStoredApiKey } from '../services/geminiService';
 import { Tarea, Project } from '../types';
 
@@ -245,10 +247,48 @@ export default function AiAssistantModal({ isOpen, onClose, tasks = [], projects
                       : 'bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded-bl-xs border border-slate-200/80 dark:border-slate-700/80'
                   }`}
                 >
-                  {/* Formato de texto con párrafos y saltos de línea */}
-                  <div className="whitespace-pre-wrap font-sans">
-                    {msg.text}
-                  </div>
+                  {/* Markdown renderizado para respuestas del asistente */}
+                  {isUser ? (
+                    <div className="whitespace-pre-wrap font-sans">{msg.text}</div>
+                  ) : (
+                    <div className="markdown-body prose prose-sm max-w-none dark:prose-invert">
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        components={{
+                          h1: ({children}) => <h1 className="text-base font-extrabold text-slate-900 dark:text-white mb-2 mt-3 border-b border-slate-200 dark:border-slate-700 pb-1">{children}</h1>,
+                          h2: ({children}) => <h2 className="text-sm font-extrabold text-slate-800 dark:text-slate-100 mb-1.5 mt-3">{children}</h2>,
+                          h3: ({children}) => <h3 className="text-xs font-bold text-slate-700 dark:text-slate-200 mb-1 mt-2">{children}</h3>,
+                          p: ({children}) => <p className="text-xs sm:text-sm leading-relaxed text-slate-800 dark:text-slate-100 mb-2 last:mb-0">{children}</p>,
+                          strong: ({children}) => <strong className="font-bold text-slate-900 dark:text-white">{children}</strong>,
+                          em: ({children}) => <em className="italic text-slate-600 dark:text-slate-300">{children}</em>,
+                          ul: ({children}) => <ul className="list-none space-y-1 mb-2 pl-1">{children}</ul>,
+                          ol: ({children}) => <ol className="list-decimal list-inside space-y-1 mb-2 pl-1">{children}</ol>,
+                          li: ({children}) => (
+                            <li className="text-xs sm:text-sm text-slate-800 dark:text-slate-100 flex gap-2 items-start">
+                              <span className="text-indigo-500 dark:text-indigo-400 mt-0.5 shrink-0">•</span>
+                              <span>{children}</span>
+                            </li>
+                          ),
+                          table: ({children}) => (
+                            <div className="overflow-x-auto my-3 rounded-xl border border-slate-200 dark:border-slate-700">
+                              <table className="w-full text-[11px] sm:text-xs border-collapse">{children}</table>
+                            </div>
+                          ),
+                          thead: ({children}) => <thead className="bg-indigo-50 dark:bg-indigo-950/60">{children}</thead>,
+                          tbody: ({children}) => <tbody className="divide-y divide-slate-100 dark:divide-slate-700/60">{children}</tbody>,
+                          tr: ({children}) => <tr className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">{children}</tr>,
+                          th: ({children}) => <th className="px-3 py-2 text-left font-extrabold text-indigo-700 dark:text-indigo-300 whitespace-nowrap">{children}</th>,
+                          td: ({children}) => <td className="px-3 py-2 text-slate-800 dark:text-slate-200 align-top">{children}</td>,
+                          code: ({children}) => <code className="px-1.5 py-0.5 rounded-md bg-slate-200 dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 font-mono text-[11px]">{children}</code>,
+                          pre: ({children}) => <pre className="my-2 p-3 bg-slate-900 dark:bg-black rounded-xl overflow-x-auto text-[11px] text-green-400 font-mono">{children}</pre>,
+                          blockquote: ({children}) => <blockquote className="border-l-4 border-indigo-400 pl-3 my-2 italic text-slate-600 dark:text-slate-300">{children}</blockquote>,
+                          hr: () => <hr className="my-3 border-slate-200 dark:border-slate-700" />,
+                        }}
+                      >
+                        {msg.text}
+                      </ReactMarkdown>
+                    </div>
+                  )}
 
                   {/* Botón copiar para respuestas del modelo */}
                   {!isUser && (
