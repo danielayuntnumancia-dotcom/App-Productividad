@@ -151,7 +151,10 @@ export default function ExpedientesView({ user, searchQuery = '', onSelectTask, 
       effectiveProjectsMap[t.projectId] = {
         id: t.projectId,
         name: t.projectName || 'Expediente Sin Nombre',
-        type: 'custom',
+        type: t.type || (t.isContratoMenor ? 'contrato_menor' : 'custom'),
+        isContratoMenor: t.isContratoMenor || false,
+        parentProjectId: t.parentProjectId,
+        parentProjectName: t.parentProjectName,
         concejalia: t.concejalia || t.projectConcejalia || t.projectMasterCategory || 'General',
         status: 'active',
         expedientCode: t.expedientCode,
@@ -164,6 +167,15 @@ export default function ExpedientesView({ user, searchQuery = '', onSelectTask, 
       }
       if (!effectiveProjectsMap[t.projectId].linkedExpedientId && t.linkedExpedientId) {
         effectiveProjectsMap[t.projectId].linkedExpedientId = t.linkedExpedientId;
+      }
+      if (!effectiveProjectsMap[t.projectId].parentProjectId && t.parentProjectId) {
+        effectiveProjectsMap[t.projectId].parentProjectId = t.parentProjectId;
+      }
+      if (!effectiveProjectsMap[t.projectId].parentProjectName && t.parentProjectName) {
+        effectiveProjectsMap[t.projectId].parentProjectName = t.parentProjectName;
+      }
+      if (effectiveProjectsMap[t.projectId].isContratoMenor === undefined && t.isContratoMenor !== undefined) {
+        effectiveProjectsMap[t.projectId].isContratoMenor = t.isContratoMenor;
       }
     }
   });
@@ -439,19 +451,52 @@ export default function ExpedientesView({ user, searchQuery = '', onSelectTask, 
               });
             };
 
+            // Helper para determinar si un proyecto hijo pertenece a un Macro-Expediente
+            const isChildOfMacro = (child: Project, macro: Project): boolean => {
+              if (!child || !macro || child.id === macro.id) return false;
+              // 1. Coincidencia directa por parentProjectId
+              if (child.parentProjectId && (
+                child.parentProjectId === macro.id ||
+                child.parentProjectId === macro.projectId ||
+                child.parentProjectId === macro.expedientCode ||
+                (macro.firestoreDocId && child.parentProjectId === macro.firestoreDocId)
+              )) {
+                return true;
+              }
+              // 2. Coincidencia por linkedExpedientId
+              if (child.linkedExpedientId && (
+                child.linkedExpedientId === macro.id ||
+                child.linkedExpedientId === macro.projectId ||
+                child.linkedExpedientId === macro.expedientCode ||
+                (macro.firestoreDocId && child.linkedExpedientId === macro.firestoreDocId)
+              )) {
+                return true;
+              }
+              // 3. Coincidencia por parentProjectName
+              if (child.parentProjectName && macro.name && child.parentProjectName.trim().toLowerCase() === macro.name.trim().toLowerCase()) {
+                return true;
+              }
+              return false;
+            };
+
             // Identificar proyectos macro
             const isMacroProjectCheck = (p: Project) => {
-              return p.isMacroProject === true || p.type === 'macro_expediente' || projectsInGroup.some(sub => sub.parentProjectId === p.id);
+              return p.isMacroProject === true || p.type === 'macro_expediente' || projectsInGroup.some(sub => isChildOfMacro(sub, p));
             };
 
             // Macro-Expedientes
             const macroProjectsInGroup = projectsInGroup.filter(p => isMacroProjectCheck(p));
 
-            // Expedientes Ordinarios (no macro y no sub-contratos)
-            const regularProjectsInGroup = projectsInGroup.filter(p => !isMacroProjectCheck(p) && !p.parentProjectId && !isContratoMenorProject(p));
+            // Comprobar si un proyecto es hijo de cualquier macro del grupo
+            const isSubProjectOfAnyMacro = (p: Project) => {
+              return macroProjectsInGroup.some(macro => isChildOfMacro(p, macro));
+            };
 
-            // Contratos Menores Independientes (sin macro padre)
-            const standaloneCMProjects = projectsInGroup.filter(p => !isMacroProjectCheck(p) && !p.parentProjectId && isContratoMenorProject(p));
+            // Expedientes Ordinarios (no macro y no sub-contratos)
+            const regularProjectsInGroup = projectsInGroup.filter(p => !isMacroProjectCheck(p) && !isSubProjectOfAnyMacro(p) && !isContratoMenorProject(p));
+
+            // Contratos Menores Independientes (sin macro padre asociado)
+            const standaloneCMProjects = projectsInGroup.filter(p => !isMacroProjectCheck(p) && !isSubProjectOfAnyMacro(p) && isContratoMenorProject(p));
 
             const isSubfolderExpanded = expandedProjects.has(`subfolder_cm_${concejaliaName}`);
 
@@ -753,10 +798,16 @@ export default function ExpedientesView({ user, searchQuery = '', onSelectTask, 
             // RENDER DE MACRO-EXPEDIENTE (ESTRUCTURA DE 3 NIVELES)
             const renderMacroProjectCard = (macroProj: Project) => {
               const isExpanded = expandedProjects.has(macroProj.id!);
-              const childCMs = projectsInGroup.filter(p => p.parentProjectId === macroProj.id);
+              const childCMs = projectsInGroup.filter(p => isChildOfMacro(p, macroProj));
               
-              // Todas las tareas de todos los sub-contratos
-              const allChildTasks = allTareas.filter(t => t.parentProjectId === macroProj.id || t.projectId === macroProj.id);
+              // Todas las tareas de todos los sub-contratos asociados al Macro
+              const allChildTasks = allTareas.filter(t => 
+                t.parentProjectId === macroProj.id || 
+                t.projectId === macroProj.id || 
+                (macroProj.expedientCode && (t.parentProjectId === macroProj.expedientCode || t.linkedExpedientId === macroProj.expedientCode)) ||
+                (macroProj.firestoreDocId && (t.parentProjectId === macroProj.firestoreDocId || t.linkedExpedientId === macroProj.firestoreDocId)) ||
+                childCMs.some(c => c.id === t.projectId)
+              );
               const completedChildCount = allChildTasks.filter(t => t.status === 'completed' || t.completada).length;
               const totalChildCount = allChildTasks.length;
               const percent = totalChildCount > 0 ? Math.round((completedChildCount / totalChildCount) * 100) : 0;

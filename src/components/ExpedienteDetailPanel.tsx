@@ -220,7 +220,7 @@ export default function ExpedienteDetailPanel({ project, onClose }: Props) {
         projectName: projectName.trim() || project.name,
         concejalia: concejalia || project.concejalia || 'General',
         projectConcejalia: concejalia || project.concejalia || 'General',
-        linkedExpedientId: linkedExpedientId || '',
+        linkedExpedientId: linkedExpedientId || project.linkedExpedientId || '',
         orderIndex: nextSeqNumber,
         title: formattedTitle,
         titulo: `${formattedTitle} - ${projectName.trim() || project.name}`,
@@ -236,6 +236,19 @@ export default function ExpedienteDetailPanel({ project, onClose }: Props) {
         prioridad: 'media',
         fecha_creacion: now
       };
+
+      if (project.parentProjectId) {
+        newTaskData.parentProjectId = project.parentProjectId;
+      }
+      if (project.parentProjectName) {
+        newTaskData.parentProjectName = project.parentProjectName;
+      }
+      if (project.isContratoMenor !== undefined) {
+        newTaskData.isContratoMenor = project.isContratoMenor;
+      }
+      if (project.expedientCode) {
+        newTaskData.expedientCode = project.expedientCode;
+      }
 
       if (resolvedUserId) {
         newTaskData.userId = resolvedUserId;
@@ -283,7 +296,7 @@ export default function ExpedienteDetailPanel({ project, onClose }: Props) {
           concejalia: concejalia || '',
           projectConcejalia: concejalia || '',
           projectMasterCategory: concejalia || '',
-          linkedExpedientId: linkedExpedientId || '',
+          linkedExpedientId: linkedExpedientId || project.linkedExpedientId || '',
           orderIndex: orderIdx,
           title: currentTitle,
           titulo: `${currentTitle} - ${newName}`,
@@ -292,6 +305,21 @@ export default function ExpedienteDetailPanel({ project, onClose }: Props) {
           status: currentStatus,
           completada: currentStatus === 'completed'
         };
+
+        const effParentProjectId = project.parentProjectId || t.parentProjectId || '';
+        if (effParentProjectId) {
+          updateData.parentProjectId = effParentProjectId;
+        }
+        const effParentProjectName = project.parentProjectName || t.parentProjectName || '';
+        if (effParentProjectName) {
+          updateData.parentProjectName = effParentProjectName;
+        }
+        if (project.isContratoMenor !== undefined || t.isContratoMenor !== undefined) {
+          updateData.isContratoMenor = project.isContratoMenor ?? t.isContratoMenor ?? false;
+        }
+        if (project.expedientCode || t.expedientCode) {
+          updateData.expedientCode = project.expedientCode || t.expedientCode;
+        }
 
         if (resolvedUserId) {
           updateData.userId = resolvedUserId;
@@ -306,19 +334,19 @@ export default function ExpedienteDetailPanel({ project, onClose }: Props) {
       });
 
       // 2. Guardar/fusionar cabecera de expediente con batch.set ({ merge: true })
-      const targetProjectId = project.id || project.projectId;
-      if (targetProjectId) {
-        const pRef = doc(db, 'tareas', targetProjectId);
+      const docIdToUse = project.firestoreDocId || project.id || project.projectId;
+      if (docIdToUse) {
+        const pRef = doc(db, 'tareas', docIdToUse);
         const projectUpdateData: any = {
           isProject: true,
-          id: targetProjectId,
-          projectId: targetProjectId,
+          id: project.id || project.projectId || docIdToUse,
+          projectId: project.id || project.projectId || docIdToUse,
           name: newName,
           projectName: newName,
           concejalia: concejalia || '',
           projectConcejalia: concejalia || '',
           projectMasterCategory: concejalia || '',
-          linkedExpedientId: linkedExpedientId || '',
+          linkedExpedientId: linkedExpedientId || project.linkedExpedientId || '',
           status: projectStatus,
           notas: (notas || '').trim(),
           notes: (notas || '').trim(),
@@ -326,6 +354,25 @@ export default function ExpedienteDetailPanel({ project, onClose }: Props) {
           sedeUrl: (sedeUrl || '').trim(),
           checklistDocs: checklistDocs || []
         };
+
+        if (project.parentProjectId) {
+          projectUpdateData.parentProjectId = project.parentProjectId;
+        }
+        if (project.parentProjectName) {
+          projectUpdateData.parentProjectName = project.parentProjectName;
+        }
+        if (project.isContratoMenor !== undefined) {
+          projectUpdateData.isContratoMenor = project.isContratoMenor;
+        }
+        if (project.isMacroProject !== undefined) {
+          projectUpdateData.isMacroProject = project.isMacroProject;
+        }
+        if (project.type) {
+          projectUpdateData.type = project.type;
+        }
+        if (project.expedientCode) {
+          projectUpdateData.expedientCode = project.expedientCode;
+        }
 
         if (resolvedUserId) {
           projectUpdateData.userId = resolvedUserId;
