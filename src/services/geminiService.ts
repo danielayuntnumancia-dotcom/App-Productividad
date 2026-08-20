@@ -57,10 +57,10 @@ Estilo de respuesta:
 
 const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
 const GROQ_MODELS = [
-  'llama-3.1-70b-versatile',
-  'llama3-70b-8192',
-  'mixtral-8x7b-32768',
-  'llama-3.1-8b-instant'
+  'llama-3.3-70b-versatile',    // Llama 3.3 70B — el más capaz (gratis)
+  'llama3-70b-8192',            // Llama 3 70B — versión estable
+  'gemma2-9b-it',               // Google Gemma 2 9B — rápido y eficiente
+  'llama3-8b-8192',             // Llama 3 8B — ultra rápido
 ];
 
 export async function askGemini(
