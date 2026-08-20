@@ -17,6 +17,7 @@ const PapeleraView = lazy(() => import('./components/PapeleraView'));
 // Lazy load paneles laterales
 const TaskDetailPanel = lazy(() => import('./components/TaskDetailPanel'));
 const ExpedienteDetailPanel = lazy(() => import('./components/ExpedienteDetailPanel'));
+const AiAssistantModal = lazy(() => import('./components/AiAssistantModal'));
 
 // Componentes estáticos rápidos
 import DeadlineAlertModal from './components/DeadlineAlertModal';
@@ -43,6 +44,7 @@ export default function App() {
   const [deletedCount, setDeletedCount] = useState<number>(0);
   const [isAlertModalOpen, setIsAlertModalOpen] = useState(false);
   const [isGlobalSearchOpen, setIsGlobalSearchOpen] = useState(false);
+  const [isAiAssistantOpen, setIsAiAssistantOpen] = useState(false);
 
   const [isDark, setIsDark] = useState(() => {
     return document.documentElement.classList.contains('dark');
@@ -236,6 +238,23 @@ export default function App() {
               </span>
             )}
           </button>
+
+          {/* BOTÓN ASISTENTE INTELIGENTE GEMINI */}
+          <div className="pt-2">
+            <button 
+              onClick={() => setIsAiAssistantOpen(true)}
+              className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl font-bold bg-gradient-to-r from-indigo-500/10 via-blue-500/10 to-cyan-500/10 hover:from-indigo-500/20 hover:to-cyan-500/20 text-indigo-700 dark:text-indigo-300 border border-indigo-200/80 dark:border-indigo-800/80 transition-all cursor-pointer shadow-xs group"
+              title="Abrir Asistente Inteligente FocusFlow (Gemini AI)"
+            >
+              <div className="flex items-center gap-2.5">
+                <span className="text-lg group-hover:scale-110 transition-transform">🤖</span>
+                <span className="text-xs">Asistente IA</span>
+              </div>
+              <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-gradient-to-r from-indigo-600 to-blue-600 text-white shadow-xs">
+                Gemini
+              </span>
+            </button>
+          </div>
         </nav>
         
         <div className="p-4 border-t border-slate-200 dark:border-brand-surface-light space-y-1 bg-slate-50 dark:bg-brand-surface">
@@ -319,7 +338,18 @@ export default function App() {
             </div>
           </div>
           
-          <div className="flex items-center gap-3 w-full md:w-auto justify-between md:justify-end">
+          <div className="flex items-center gap-2 sm:gap-3 w-full md:w-auto justify-between md:justify-end">
+            {/* BOTÓN ASISTENTE IA */}
+            <button
+              type="button"
+              onClick={() => setIsAiAssistantOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-gradient-to-r from-indigo-500/10 via-blue-500/10 to-cyan-500/10 hover:from-indigo-500/20 hover:to-cyan-500/20 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 transition-all cursor-pointer shadow-xs shrink-0"
+              title="Abrir Asistente Inteligente FocusFlow (Gemini AI)"
+            >
+              <span>🤖</span>
+              <span className="hidden sm:inline">Asistente IA</span>
+            </button>
+
             <button
               type="button"
               onClick={() => setIsAlertModalOpen(true)}
@@ -490,6 +520,15 @@ export default function App() {
         onSelectTask={handleSelectTask}
         onSelectProject={handleSelectProject}
       />
+
+      {/* MODAL DEL ASISTENTE INTELIGENTE GEMINI */}
+      <Suspense fallback={null}>
+        <AiAssistantModal
+          isOpen={isAiAssistantOpen}
+          onClose={() => setIsAiAssistantOpen(false)}
+          tasks={allTareas}
+        />
+      </Suspense>
 
     </div>
   );
