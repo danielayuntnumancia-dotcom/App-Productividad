@@ -52,7 +52,7 @@ export async function askGemini(
 ): Promise<string> {
   const apiKey = getStoredApiKey();
   if (!apiKey) {
-    throw new Error("No se ha configurado ninguna clave de API de Gemini. Por favor, introduce tu clave en el panel de ajustes del asistente.");
+    throw new Error("No se ha configurado ninguna clave de API de Gemini. Por favor, introduce tu clave en el panel de ajustes del asistente (⚙️).");
   }
 
   // Enriquecer el prompt con contexto si está disponible
@@ -71,20 +71,43 @@ export async function askGemini(
     }
   }
 
-  // Construir historial de contenidos para la API
-  const contents = [
-    ...history.slice(-6).map((msg) => ({
-      role: msg.role === 'user' ? 'user' : 'model',
-      parts: [{ text: msg.text }]
-    })),
-    {
+  // Construir historial válido para la API de Gemini:
+  // 1. Descartar cualquier mensaje de bienvenida inicial con rol 'model' para que comience en 'user'
+  const validHistory = history.filter((msg, idx) => {
+    // Si el primer mensaje es del modelo (bienvenida), omitirlo
+    if (idx === 0 && msg.role === 'model') return false;
+    return true;
+  });
+
+  const formattedContents: Array<{ role: string; parts: Array<{ text: string }> }> = [];
+
+  // Asegurar alternancia user -> model -> user
+  for (const msg of validHistory.slice(-6)) {
+    const role = msg.role === 'user' ? 'user' : 'model';
+    // Evitar roles duplicados seguidos si ocurriera
+    const lastRole = formattedContents[formattedContents.length - 1]?.role;
+    if (lastRole === role) {
+      formattedContents[formattedContents.length - 1].parts[0].text += `\n${msg.text}`;
+    } else {
+      formattedContents.push({
+        role,
+        parts: [{ text: msg.text }]
+      });
+    }
+  }
+
+  // Si el historial termina en user o está vacío, añadir el nuevo prompt
+  const lastItem = formattedContents[formattedContents.length - 1];
+  if (lastItem && lastItem.role === 'user') {
+    lastItem.parts[0].text = contextualizedPrompt;
+  } else {
+    formattedContents.push({
       role: 'user',
       parts: [{ text: contextualizedPrompt }]
-    }
-  ];
+    });
+  }
 
-  const modelsToTry = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
-
+  const modelsToTry = ['gemini-2.0-flash', 'gemini-1.5-flash'];
   let lastError: any = null;
 
   for (const modelName of modelsToTry) {
@@ -94,13 +117,14 @@ export async function askGemini(
       const response = await fetch(url, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'x-goog-api-key': apiKey
         },
         body: JSON.stringify({
           systemInstruction: {
             parts: [{ text: SYSTEM_INSTRUCTION }]
           },
-          contents: contents,
+          contents: formattedContents,
           generationConfig: {
             temperature: 0.4,
             maxOutputTokens: 2048,
@@ -120,12 +144,8 @@ export async function askGemini(
         return generatedText.trim();
       }
     } catch (err: any) {
-      console.warn(`Error con modelo ${modelName}:`, err?.message);
+      console.warn(`Error al consultar ${modelName}:`, err?.message);
       lastError = err;
-      // Si es un error de clave inválida, no seguir probando otros modelos
-      if (err?.message?.includes('API_KEY_INVALID') || err?.message?.includes('API key not valid')) {
-        throw new Error("La clave de API de Gemini proporcionada no es válida. Por favor, revísala en los ajustes del asistente.");
-      }
     }
   }
 
