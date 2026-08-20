@@ -38,7 +38,7 @@ export default function AiAssistantModal({ isOpen, onClose, tasks = [], projects
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       role: 'model',
-      text: '¡Hola! Soy tu **Asistente Inteligente de FocusFlow**. Puedo ayudarte a redactar memorias justificativas de contratos menores, desglosar trámites de expedientes, redactar comunicaciones formales o asesorarte con plazos administrativos. ¿En qué te ayudo hoy?'
+      text: '¡Hola! Soy tu **Asistente Inteligente de FocusFlow** (motor Groq AI). Puedo ayudarte a redactar memorias justificativas de contratos menores, desglosar trámites de expedientes, redactar comunicaciones formales o asesorarte con plazos administrativos. ¿En qué te ayudo hoy?'
     }
   ]);
   const [inputText, setInputText] = useState('');
@@ -112,8 +112,8 @@ export default function AiAssistantModal({ isOpen, onClose, tasks = [], projects
                 <h3 className="font-extrabold text-slate-800 dark:text-slate-100 text-base sm:text-lg">
                   Asistente FocusFlow
                 </h3>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-xs">
-                  Gemini AI
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-gradient-to-r from-orange-500 to-red-500 text-white shadow-xs">
+                  Groq AI
                 </span>
               </div>
               <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400">
@@ -165,16 +165,16 @@ export default function AiAssistantModal({ isOpen, onClose, tasks = [], projects
         {showSettings && (
           <div className="p-4 bg-indigo-50/90 dark:bg-indigo-950/40 border-b border-indigo-200 dark:border-indigo-800 space-y-2.5 animate-fade-in shrink-0">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-indigo-900 dark:text-indigo-200 flex items-center gap-1.5">
-                <span>🔑</span> Configuración de Clave API de Google Gemini
+              <span className="w-full text-[11px] font-bold text-orange-900 dark:text-orange-200 flex items-center gap-1.5">
+                ⚙️ Clave Groq: Configuración de Clave API
               </span>
               <a
-                href="https://aistudio.google.com/app/apikey"
+                href="https://console.groq.com/keys"
                 target="_blank"
                 rel="noreferrer"
-                className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline"
+                className="text-[11px] font-bold text-orange-600 dark:text-orange-400 hover:underline whitespace-nowrap"
               >
-                Obtener clave gratis en Google AI Studio ↗
+                Obtener clave gratis en Groq ↗
               </a>
             </div>
             <div className="flex items-center gap-2">
@@ -182,13 +182,13 @@ export default function AiAssistantModal({ isOpen, onClose, tasks = [], projects
                 type="password"
                 value={customKeyInput}
                 onChange={(e) => setCustomKeyInput(e.target.value)}
-                placeholder="Pega tu clave de API de Gemini..."
-                className="flex-1 px-3 py-2 bg-white dark:bg-slate-900 border border-indigo-200 dark:border-indigo-800 rounded-xl text-xs text-slate-800 dark:text-slate-100 font-mono outline-none"
+                placeholder="Pega tu clave de Groq (gsk_...)..."
+                className="flex-1 px-3 py-2 bg-white dark:bg-slate-900 border border-orange-200 dark:border-orange-800 rounded-xl text-xs text-slate-800 dark:text-slate-100 font-mono outline-none"
               />
               <button
                 type="button"
                 onClick={handleSaveKey}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer"
+                className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer"
               >
                 Guardar
               </button>

@@ -1,14 +1,13 @@
-import { GoogleGenAI } from '@google/genai';
 import { Tarea, Project } from '../types';
 
-const STORAGE_KEY = 'focusflow_gemini_api_key';
+const STORAGE_KEY = 'focusflow_ai_api_key';
 
 export function getStoredApiKey(): string {
   if (typeof window !== 'undefined') {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved && saved.trim()) return saved.trim();
   }
-  return import.meta.env.VITE_GEMINI_API_KEY || '';
+  return import.meta.env.VITE_GROQ_API_KEY || import.meta.env.VITE_GEMINI_API_KEY || '';
 }
 
 export function saveStoredApiKey(key: string): void {
@@ -44,7 +43,16 @@ Tu función es ayudar a los responsables municipales y funcionarios a:
 Estilo de respuesta:
 - Profesional, riguroso, claro y perfectamente estructurado con títulos en negrita y viñetas.
 - Cuando redactes un documento o borrador, entrégalo en un formato listo para copiar y pegar directamente en Word o en el gestor de expedientes (Gestiona).
-- Sé conciso y directo, evitando rodeos innecesarios.`;
+- Sé conciso y directo, evitando rodeos innecesarios.
+- Responde siempre en español.`;
+
+const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
+const GROQ_MODELS = [
+  'llama-3.1-70b-versatile',
+  'llama3-70b-8192',
+  'mixtral-8x7b-32768',
+  'llama-3.1-8b-instant'
+];
 
 export async function askGemini(
   prompt: string,
@@ -53,7 +61,7 @@ export async function askGemini(
 ): Promise<string> {
   const apiKey = getStoredApiKey();
   if (!apiKey) {
-    throw new Error("No se ha configurado ninguna clave de API de Gemini. Por favor, introduce tu clave en el panel de ajustes del asistente (⚙️).");
+    throw new Error("No se ha configurado ninguna clave de API. Por favor, introduce tu clave de Groq en el panel de ajustes del asistente (⚙️).");
   }
 
   // Enriquecer el prompt con contexto si está disponible
@@ -66,7 +74,7 @@ export async function askGemini(
     if (contextData.tasks?.length) {
       const pending = contextData.tasks.filter(t => !t.completada && t.status !== 'completed').slice(0, 8);
       if (pending.length > 0) {
-        summaryContext.push(`Tareas pendientes: ${pending.map(t => t.titulo || t.title).join(', ')}`);
+        summaryContext.push(`Tareas pendientes: ${pending.map(t => t.titulo || t.title).filter(Boolean).join(', ')}`);
       }
     }
     if (summaryContext.length > 0) {
@@ -74,70 +82,67 @@ export async function askGemini(
     }
   }
 
-  try {
-    // Usar el SDK oficial de Google GenAI (compatible con claves AQ.)
-    const ai = new GoogleGenAI({ apiKey });
+  // Construir historial de mensajes en formato OpenAI (compatible con Groq)
+  const messages: Array<{ role: string; content: string }> = [
+    { role: 'system', content: SYSTEM_INSTRUCTION }
+  ];
 
-    // Construir historial de conversación excluyendo el mensaje de bienvenida inicial
-    const validHistory = history.filter((msg, idx) => {
-      if (idx === 0 && msg.role === 'model') return false;
-      return true;
+  // Añadir historial (excluyendo mensaje de bienvenida inicial del modelo)
+  const validHistory = history.filter((msg, idx) => {
+    if (idx === 0 && msg.role === 'model') return false;
+    return true;
+  });
+
+  for (const msg of validHistory.slice(-8)) {
+    messages.push({
+      role: msg.role === 'user' ? 'user' : 'assistant',
+      content: msg.text
     });
-
-    // Construir el array de contents para el SDK
-    const contents: Array<{ role: string; parts: Array<{ text: string }> }> = [];
-
-    for (const msg of validHistory.slice(-6)) {
-      const role = msg.role === 'user' ? 'user' : 'model';
-      const lastRole = contents[contents.length - 1]?.role;
-      if (lastRole === role) {
-        contents[contents.length - 1].parts[0].text += `\n${msg.text}`;
-      } else {
-        contents.push({ role, parts: [{ text: msg.text }] });
-      }
-    }
-
-    // Añadir el nuevo mensaje del usuario
-    const lastItem = contents[contents.length - 1];
-    if (lastItem && lastItem.role === 'user') {
-      lastItem.parts[0].text = contextualizedPrompt;
-    } else {
-      contents.push({ role: 'user', parts: [{ text: contextualizedPrompt }] });
-    }
-
-    const modelsToTry = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.0-flash-lite'];
-
-    let lastErr: any = null;
-
-    for (const modelName of modelsToTry) {
-      try {
-        const response = await ai.models.generateContent({
-          model: modelName,
-          contents: contents as any,
-          config: {
-            systemInstruction: SYSTEM_INSTRUCTION,
-            temperature: 0.4,
-            maxOutputTokens: 2048,
-          }
-        });
-
-        const text = response.text;
-        if (text) return text.trim();
-
-      } catch (err: any) {
-        console.warn(`Error con modelo ${modelName}:`, err?.message);
-        lastErr = err;
-      }
-    }
-
-    throw lastErr || new Error("No se pudo obtener respuesta del asistente de IA.");
-
-  } catch (err: any) {
-    console.error("Error en askGemini:", err);
-    const msg = err?.message || 'Error desconocido';
-    if (msg.includes('API_KEY_INVALID') || msg.includes('CONSUMER_INVALID') || msg.includes('permission')) {
-      throw new Error("La clave de API no es válida o no tiene permisos suficientes. Comprueba tu clave en los ajustes (⚙️).");
-    }
-    throw new Error(msg);
   }
+
+  // Añadir el nuevo prompt del usuario
+  messages.push({ role: 'user', content: contextualizedPrompt });
+
+  let lastError: any = null;
+
+  for (const model of GROQ_MODELS) {
+    try {
+      const response = await fetch(GROQ_ENDPOINT, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model,
+          messages,
+          temperature: 0.4,
+          max_tokens: 2048,
+          stream: false
+        })
+      });
+
+      if (!response.ok) {
+        const errJson = await response.json().catch(() => ({}));
+        const errMsg = errJson?.error?.message || `HTTP ${response.status}`;
+        console.warn(`Fallo con modelo ${model}: ${errMsg}`);
+        lastError = new Error(errMsg);
+        continue;
+      }
+
+      const data = await response.json();
+      const text = data?.choices?.[0]?.message?.content;
+      if (text) return text.trim();
+
+    } catch (err: any) {
+      console.warn(`Error con ${model}:`, err?.message);
+      lastError = err;
+    }
+  }
+
+  const errMsg = lastError?.message || 'Error desconocido';
+  if (errMsg.includes('Invalid API Key') || errMsg.includes('401') || errMsg.includes('unauthorized')) {
+    throw new Error("Clave de API no válida. Comprueba que has introducido correctamente tu clave de Groq (empieza por 'gsk_...').");
+  }
+  throw new Error(`No se pudo conectar con el Asistente IA: ${errMsg}`);
 }
