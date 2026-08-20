@@ -13,7 +13,7 @@ interface Props {
   isAllSelected?: boolean;
 }
 
-type ActiveActionModal = 'status' | 'priority' | 'time' | 'date' | 'concejalia' | 'blocked' | 'notes' | 'all' | null;
+type ActiveActionModal = 'status' | 'priority' | 'time' | 'date' | 'concejalia' | 'notes' | 'all' | null;
 
 const COMMON_DEPARTMENTS = [
   'Plataforma Gestiona / Funcionario',
@@ -59,10 +59,8 @@ export default function BulkTaskActionBar({
     time: false,
     date: false,
     concejalia: false,
-    myDay: false,
     notes: false
   });
-  const [multiMyDay, setMultiMyDay] = useState<boolean>(true);
 
   // Ejecutar actualización en lote en Firestore
   const executeBatchUpdate = async (updateData: Record<string, any>, customMsg?: string) => {
@@ -78,12 +76,12 @@ export default function BulkTaskActionBar({
       });
 
       await batch.commit();
-      setFeedbackMsg(customMsg || `¡${count} tareas actualizadas correctamente!`);
+      setFeedbackMsg(customMsg || `¡${count} tareas actualizadas!`);
       setActiveModal(null);
       setTimeout(() => {
         setFeedbackMsg(null);
         onClearSelection();
-      }, 1400);
+      }, 1300);
     } catch (err: any) {
       console.error("Error executing bulk task update: ", err);
       alert(`Error al actualizar tareas en lote: ${err?.message || 'Error desconocido'}`);
@@ -92,18 +90,7 @@ export default function BulkTaskActionBar({
     }
   };
 
-  // 1. Acción rápida: Marcar como Completadas directamente
-  const handleQuickComplete = () => {
-    executeBatchUpdate({
-      status: 'completed',
-      completada: true,
-      completedAt: Date.now(),
-      blockedBy: '',
-      blockingReason: ''
-    }, `✅ ¡${count} tareas marcadas como completadas!`);
-  };
-
-  // 2. Cambiar Estado Masivo (Cualquier Estado)
+  // Cambiar Estado Masivo
   const handleApplyStatus = (statusToApply?: TaskStatus) => {
     const st = statusToApply || targetStatus;
     if (st === 'completed') {
@@ -143,15 +130,16 @@ export default function BulkTaskActionBar({
     }
   };
 
-  // 3. Cambiar Prioridad Masiva
-  const handleApplyPriority = () => {
+  // Cambiar Prioridad Masiva
+  const handleApplyPriority = (pToApply?: 'alta' | 'media' | 'baja') => {
+    const p = pToApply || targetPriority;
     executeBatchUpdate({
-      prioridad: targetPriority,
-      priority: targetPriority
-    }, `🔴 Prioridad ${targetPriority.toUpperCase()} asignada a ${count} tareas.`);
+      prioridad: p,
+      priority: p
+    }, `🔴 Prioridad ${p.toUpperCase()} asignada a ${count} tareas.`);
   };
 
-  // 4. Cambiar Tiempo Estimado Masivo
+  // Cambiar Tiempo Estimado Masivo
   const handleApplyTime = (customMin?: number) => {
     const mins = customMin !== undefined ? customMin : (Number(targetMinutes) || 15);
     executeBatchUpdate({
@@ -160,7 +148,7 @@ export default function BulkTaskActionBar({
     }, `⏱️ ${mins} minutos asignados a ${count} tareas.`);
   };
 
-  // 5. Cambiar Fecha de Vencimiento Masiva
+  // Cambiar Fecha de Vencimiento Masiva
   const handleApplyDueDate = (preset?: 'today' | 'tomorrow' | 'nextWeek' | 'clear') => {
     if (preset === 'clear') {
       executeBatchUpdate({
@@ -197,24 +185,18 @@ export default function BulkTaskActionBar({
     }, `📅 Nueva fecha límite asignada a ${count} tareas.`);
   };
 
-  // 6. Cambiar Concejalía Masiva
-  const handleApplyConcejalia = () => {
-    if (!targetConcejalia) return;
+  // Cambiar Concejalía Masiva
+  const handleApplyConcejalia = (cToApply?: string) => {
+    const c = cToApply || targetConcejalia;
+    if (!c) return;
     executeBatchUpdate({
-      concejalia: targetConcejalia,
-      projectConcejalia: targetConcejalia,
-      projectMasterCategory: targetConcejalia
-    }, `🏛️ Concejalía "${targetConcejalia}" asignada.`);
+      concejalia: c,
+      projectConcejalia: c,
+      projectMasterCategory: c
+    }, `🏛️ Concejalía "${c}" asignada.`);
   };
 
-  // 7. Toggle Mi Día Masivo
-  const handleToggleMyDay = (inMyDay: boolean) => {
-    executeBatchUpdate({
-      isInMyDay: inMyDay
-    }, inMyDay ? `☀️ ${count} tareas añadidas a Mi Día` : `🌑 ${count} tareas quitadas de Mi Día`);
-  };
-
-  // 8. Aplicar Notas / Observaciones en Bloque
+  // Aplicar Notas Masivas
   const handleApplyNotes = () => {
     if (!targetNotes.trim() && notesMode === 'replace') {
       if (!window.confirm("¿Deseas vaciar las notas de las tareas seleccionadas?")) return;
@@ -247,7 +229,7 @@ export default function BulkTaskActionBar({
         setTimeout(() => {
           setFeedbackMsg(null);
           onClearSelection();
-        }, 1400);
+        }, 1300);
       });
     } catch (err: any) {
       console.error("Error updating bulk notes: ", err);
@@ -257,7 +239,7 @@ export default function BulkTaskActionBar({
     }
   };
 
-  // 9. Guardar Edición Completa Multicampo
+  // Guardar Edición Completa Multicampo
   const handleApplyMultiField = () => {
     const updateObj: Record<string, any> = {};
 
@@ -318,10 +300,6 @@ export default function BulkTaskActionBar({
       updateObj.projectMasterCategory = targetConcejalia;
     }
 
-    if (enableFields.myDay) {
-      updateObj.isInMyDay = multiMyDay;
-    }
-
     if (Object.keys(updateObj).length === 0 && !enableFields.notes) {
       alert("Por favor selecciona al menos un campo para actualizar.");
       return;
@@ -351,12 +329,12 @@ export default function BulkTaskActionBar({
         });
 
         batch.commit().then(() => {
-          setFeedbackMsg(`✏️ ¡${count} tareas actualizadas correctamente!`);
+          setFeedbackMsg(`✏️ ¡${count} tareas actualizadas!`);
           setActiveModal(null);
           setTimeout(() => {
             setFeedbackMsg(null);
             onClearSelection();
-          }, 1400);
+          }, 1300);
         });
       } catch (err: any) {
         console.error("Error updating bulk multi-field: ", err);
@@ -365,11 +343,11 @@ export default function BulkTaskActionBar({
         setIsProcessing(false);
       }
     } else {
-      executeBatchUpdate(updateObj, `✏️ ¡${count} tareas actualizadas correctamente!`);
+      executeBatchUpdate(updateObj, `✏️ ¡${count} tareas actualizadas!`);
     }
   };
 
-  // 10. Eliminar Tareas Masivas
+  // Eliminar Tareas Masivas
   const handleDeleteBulk = async () => {
     if (!window.confirm(`¿Estás seguro de que deseas eliminar definitivamente ${count} tareas seleccionadas? Esta acción no se puede deshacer.`)) {
       return;
@@ -398,164 +376,131 @@ export default function BulkTaskActionBar({
 
   return (
     <>
-      {/* BARRA FLOTANTE PRINCIPAL DE ACCIONES MASIVAS */}
-      <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 w-[96%] max-w-6xl bg-slate-900/95 dark:bg-slate-800/95 text-white backdrop-blur-xl border border-slate-700/80 shadow-2xl rounded-2xl sm:rounded-3xl p-2.5 sm:p-3.5 animate-fade-in-up transition-all duration-300">
+      {/* BARRA FLOTANTE PRINCIPAL DE ACCIONES MASIVAS (PÍLDORA COMPACTA Y ELEGANTE) */}
+      <div className="fixed bottom-4 sm:bottom-6 left-1/2 -translate-x-1/2 z-50 max-w-[96vw] w-auto bg-slate-900/95 dark:bg-slate-800/95 text-white backdrop-blur-xl border border-slate-700/80 shadow-2xl rounded-full px-3 py-2 sm:px-4 sm:py-2.5 animate-fade-in-up transition-all duration-300">
         
         {feedbackMsg ? (
-          <div className="flex items-center justify-center gap-2 py-1 text-emerald-400 font-bold text-sm sm:text-base animate-fade-in">
-            <svg className="w-5 h-5 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="flex items-center justify-center gap-2 px-3 py-0.5 text-emerald-400 font-bold text-xs sm:text-sm animate-fade-in">
+            <svg className="w-4 h-4 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" />
             </svg>
             <span>{feedbackMsg}</span>
           </div>
         ) : (
-          <div className="flex flex-col lg:flex-row items-center justify-between gap-2.5">
+          <div className="flex items-center gap-2 sm:gap-2.5 flex-nowrap overflow-x-auto no-scrollbar">
             
-            {/* Contador y Selector Global */}
-            <div className="flex items-center gap-2.5 shrink-0 w-full lg:w-auto justify-between lg:justify-start">
-              <div className="flex items-center gap-2">
-                <span className="w-6 h-6 rounded-full bg-indigo-500 text-white font-extrabold text-xs flex items-center justify-center shadow-xs">
-                  {count}
-                </span>
-                <span className="text-xs sm:text-sm font-bold text-slate-100">
-                  {count === 1 ? '1 tarea seleccionada' : `${count} tareas seleccionadas`}
-                </span>
-              </div>
+            {/* Contador y Selector */}
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 pr-1.5 border-r border-slate-700/80">
+              <span className="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-indigo-500 text-white font-black text-[11px] sm:text-xs flex items-center justify-center shadow-xs shrink-0">
+                {count}
+              </span>
+              <span className="text-[11px] sm:text-xs font-bold text-slate-100 whitespace-nowrap hidden md:inline">
+                {count === 1 ? '1 seleccionada' : `${count} seleccionadas`}
+              </span>
 
               {onSelectAll && (
                 <button
                   type="button"
                   onClick={onSelectAll}
-                  className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-semibold rounded-xl transition-colors cursor-pointer border border-slate-700"
+                  className="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-[10px] sm:text-xs font-semibold rounded-lg transition-colors cursor-pointer border border-slate-700 whitespace-nowrap"
                 >
-                  {isAllSelected ? 'Desmarcar todo' : 'Seleccionar todo'}
+                  {isAllSelected ? 'Desmarcar' : 'Todo'}
                 </button>
               )}
             </div>
 
-            {/* BOTONERA DE ACCIONES EN LOTE */}
-            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar w-full lg:w-auto justify-start lg:justify-end pb-1 lg:pb-0">
+            {/* BOTONES DE ACCIONES EN LOTE */}
+            <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
               
-              {/* ACCIÓN RÁPIDA DIRECTA: MARCAR COMPLETADAS */}
-              <button
-                type="button"
-                onClick={handleQuickComplete}
-                disabled={isProcessing}
-                className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shrink-0 shadow-sm disabled:opacity-50"
-                title="Marcar todas las tareas seleccionadas como completadas"
-              >
-                <span>✅</span> <span className="hidden sm:inline">Marcar</span> Completadas
-              </button>
-
-              {/* CAMBIAR ESTADO COMPLETO */}
+              {/* 1. CAMBIAR ESTADO (CENTRALIZADO) */}
               <button
                 type="button"
                 onClick={() => setActiveModal('status')}
-                className="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shrink-0 shadow-xs"
-                title="Cambiar estado: Pendiente, En curso, Retenido o Completada"
+                className="px-2.5 sm:px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] sm:text-xs font-bold rounded-full transition-all flex items-center gap-1 cursor-pointer shrink-0 shadow-xs"
+                title="Cambiar estado: Completada, Pendiente, En Curso o Retenido por terceros"
               >
-                <span>⚡</span> Estado
+                <span>⚡</span> <span>Estado</span>
               </button>
 
-              {/* PRIORIDAD */}
+              {/* 2. PRIORIDAD */}
               <button
                 type="button"
                 onClick={() => setActiveModal('priority')}
-                className="px-2.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-xs font-bold rounded-xl border border-slate-700 transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
+                className="px-2 sm:px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-[11px] sm:text-xs font-bold rounded-full border border-slate-700 transition-all flex items-center gap-1 cursor-pointer shrink-0"
                 title="Cambiar prioridad en lote"
               >
-                <span>🔴</span> Prioridad
+                <span>🔴</span> <span className="hidden sm:inline">Prioridad</span>
               </button>
 
-              {/* TIEMPO */}
+              {/* 3. TIEMPO */}
               <button
                 type="button"
                 onClick={() => setActiveModal('time')}
-                className="px-2.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-xs font-bold rounded-xl border border-slate-700 transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
+                className="px-2 sm:px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-[11px] sm:text-xs font-bold rounded-full border border-slate-700 transition-all flex items-center gap-1 cursor-pointer shrink-0"
                 title="Cambiar tiempo estimado en lote"
               >
-                <span>⏱️</span> Tiempo
+                <span>⏱️</span> <span className="hidden sm:inline">Tiempo</span>
               </button>
 
-              {/* FECHA */}
+              {/* 4. FECHA */}
               <button
                 type="button"
                 onClick={() => setActiveModal('date')}
-                className="px-2.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-xs font-bold rounded-xl border border-slate-700 transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
+                className="px-2 sm:px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-[11px] sm:text-xs font-bold rounded-full border border-slate-700 transition-all flex items-center gap-1 cursor-pointer shrink-0"
                 title="Asignar fecha límite en lote"
               >
-                <span>📅</span> Fecha
+                <span>📅</span> <span className="hidden sm:inline">Fecha</span>
               </button>
 
-              {/* CONCEJALÍA */}
+              {/* 5. CONCEJALÍA */}
               {concejaliasList.length > 0 && (
                 <button
                   type="button"
                   onClick={() => setActiveModal('concejalia')}
-                  className="px-2.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-xs font-bold rounded-xl border border-slate-700 transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
+                  className="px-2 sm:px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-[11px] sm:text-xs font-bold rounded-full border border-slate-700 transition-all flex items-center gap-1 cursor-pointer shrink-0"
                   title="Mover a otra concejalía"
                 >
-                  <span>🏛️</span> Concejalía
+                  <span>🏛️</span> <span className="hidden sm:inline">Concejalía</span>
                 </button>
               )}
 
-              {/* RETENIDO / BLOQUEO */}
-              <button
-                type="button"
-                onClick={() => setActiveModal('blocked')}
-                className="px-2.5 py-2 bg-amber-600/80 hover:bg-amber-600 text-white text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
-                title="Marcar como retenido por terceros o gestionar motivo de bloqueo"
-              >
-                <span>⚠️</span> Retenido
-              </button>
-
-              {/* TOGGLE MI DÍA */}
-              <button
-                type="button"
-                onClick={() => handleToggleMyDay(true)}
-                className="px-2.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-amber-400 text-xs font-bold rounded-xl border border-slate-700 transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
-                title="Añadir todas las tareas seleccionadas a Mi Día"
-              >
-                <span>☀️</span> +Mi Día
-              </button>
-
-              {/* NOTAS */}
+              {/* 6. NOTAS */}
               <button
                 type="button"
                 onClick={() => setActiveModal('notes')}
-                className="px-2.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-xs font-bold rounded-xl border border-slate-700 transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
+                className="px-2 sm:px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-[11px] sm:text-xs font-bold rounded-full border border-slate-700 transition-all flex items-center gap-1 cursor-pointer shrink-0"
                 title="Añadir o editar notas masivas"
               >
-                <span>📝</span> Notas
+                <span>📝</span> <span className="hidden sm:inline">Notas</span>
               </button>
 
-              {/* EDICIÓN MÚLTIPLE */}
+              {/* 7. EDITAR TODO */}
               <button
                 type="button"
                 onClick={() => setActiveModal('all')}
-                className="px-2.5 py-2 bg-indigo-950/80 hover:bg-indigo-900 text-indigo-300 hover:text-white text-xs font-bold rounded-xl border border-indigo-700/60 transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
+                className="px-2.5 py-1.5 bg-indigo-950/80 hover:bg-indigo-900 text-indigo-300 hover:text-white text-[11px] sm:text-xs font-bold rounded-full border border-indigo-700/60 transition-all flex items-center gap-1 cursor-pointer shrink-0"
                 title="Abrir editor masivo multicampo"
               >
-                <span>✏️</span> Editar Todo
+                <span>✏️</span> <span className="hidden md:inline">Editar Todo</span>
               </button>
 
-              {/* ELIMINAR MASIVO */}
+              {/* 8. ELIMINAR MASIVO */}
               <button
                 type="button"
                 onClick={handleDeleteBulk}
-                className="p-2 bg-red-500/20 hover:bg-red-500/40 text-red-300 hover:text-red-200 rounded-xl transition-colors cursor-pointer shrink-0"
+                className="p-1.5 sm:p-2 bg-red-500/20 hover:bg-red-500/40 text-red-300 hover:text-red-200 rounded-full transition-colors cursor-pointer shrink-0 ml-0.5"
                 title="Eliminar tareas seleccionadas"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                 </svg>
               </button>
 
-              {/* CANCELAR SELECCIÓN */}
+              {/* 9. CANCELAR SELECCIÓN */}
               <button
                 type="button"
                 onClick={onClearSelection}
-                className="p-2 hover:bg-slate-800 text-slate-400 hover:text-white rounded-xl transition-colors cursor-pointer shrink-0 ml-0.5"
+                className="p-1.5 sm:p-2 hover:bg-slate-800 text-slate-400 hover:text-white rounded-full transition-colors cursor-pointer shrink-0"
                 title="Cancelar selección"
               >
                 ✕
@@ -568,10 +513,10 @@ export default function BulkTaskActionBar({
 
       {/* MODALES DE ACCIÓN ESPECÍFICA */}
 
-      {/* 1. MODAL CAMBIAR ESTADO (TODAS LAS OPCIONES) */}
+      {/* 1. MODAL UNIFICADO CAMBIAR ESTADO (CON DESPLEGABLE DINÁMICO DE RETENCIÓN) */}
       {activeModal === 'status' && (
         <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in">
-          <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 w-full max-w-md border border-slate-200 dark:border-slate-700 shadow-2xl space-y-4 animate-fade-in-up">
+          <div className="bg-white dark:bg-slate-800 rounded-3xl p-5 sm:p-6 w-full max-w-md border border-slate-200 dark:border-slate-700 shadow-2xl space-y-4 animate-fade-in-up">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
                 <span>⚡</span> Cambiar Estado ({count} tareas)
@@ -579,116 +524,190 @@ export default function BulkTaskActionBar({
               <button
                 type="button"
                 onClick={() => setActiveModal(null)}
-                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-sm font-bold"
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-sm font-bold p-1"
               >
                 ✕
               </button>
             </div>
 
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Selecciona el nuevo estado que tendrán todas las tareas marcadas:
+              Selecciona el estado deseado para aplicar a todas las tareas marcadas:
             </p>
             
             <div className="space-y-2">
-              {[
-                { 
-                  key: 'completed', 
-                  label: 'Completada', 
-                  icon: '✅', 
-                  desc: 'Marca las tareas como finalizadas y archiva su progreso',
-                  badgeClass: 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-500 text-emerald-700 dark:text-emerald-300'
-                },
-                { 
-                  key: 'todo', 
-                  label: 'Pendiente', 
-                  icon: '⏳', 
-                  desc: 'Tarea pendiente de realizar en la bandeja de trabajo',
-                  badgeClass: 'bg-slate-50 dark:bg-slate-700/50 border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200'
-                },
-                { 
-                  key: 'in_progress', 
-                  label: 'En Curso', 
-                  icon: '🚀', 
-                  desc: 'Actualmente en elaboración activa',
-                  badgeClass: 'bg-blue-50 dark:bg-blue-950/40 border-blue-500 text-blue-700 dark:text-blue-300'
-                },
-                { 
-                  key: 'waiting_on_third_party', 
-                  label: 'En Espera / Retenido por Terceros', 
-                  icon: '⚠️', 
-                  desc: 'Retenida a la espera de firma, informe, plataforma o terceros',
-                  badgeClass: 'bg-amber-50 dark:bg-amber-950/40 border-amber-500 text-amber-800 dark:text-amber-300'
-                },
-              ].map((st) => {
-                const isSelected = targetStatus === st.key;
-                return (
-                  <div
-                    key={st.key}
-                    onClick={() => setTargetStatus(st.key as TaskStatus)}
-                    className={`p-3 rounded-2xl border transition-all cursor-pointer ${
-                      isSelected
-                        ? `${st.badgeClass} ring-2 ring-indigo-500/30 font-bold`
-                        : 'bg-slate-50 dark:bg-slate-700/40 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-slate-400'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2 font-bold text-xs sm:text-sm">
-                        <span>{st.icon}</span>
-                        <span>{st.label}</span>
-                      </div>
-                      {isSelected && <span className="font-extrabold text-sm">✓</span>}
-                    </div>
-                    <p className="text-[11px] font-normal text-slate-500 dark:text-slate-400 mt-1 pl-6">
-                      {st.desc}
-                    </p>
-
-                    {/* Si está seleccionado Retenido, mostrar input de departamento */}
-                    {isSelected && st.key === 'waiting_on_third_party' && (
-                      <div className="mt-3 pl-6 space-y-2" onClick={(e) => e.stopPropagation()}>
-                        <label className="block text-[11px] font-bold text-amber-900 dark:text-amber-200">
-                          Departamento / Motivo de Retención:
-                        </label>
-                        <input
-                          type="text"
-                          value={targetBlockedBy}
-                          onChange={(e) => setTargetBlockedBy(e.target.value)}
-                          placeholder="Ej. Plataforma Gestiona, Intervención, Proveedor..."
-                          className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-amber-400 dark:border-amber-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 outline-none"
-                        />
-                        <div className="flex flex-wrap gap-1 pt-1">
-                          {['Plataforma Gestiona', 'Intervención', 'Zaira y Ana', 'Secretaría'].map(dept => (
-                            <button
-                              key={dept}
-                              type="button"
-                              onClick={() => setTargetBlockedBy(dept)}
-                              className="px-2 py-0.5 bg-amber-100/70 dark:bg-amber-900/40 text-[10px] rounded-lg text-amber-800 dark:text-amber-300 hover:bg-amber-200"
-                            >
-                              {dept}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
+              
+              {/* OPCIÓN 1: COMPLETADA */}
+              <div
+                onClick={() => {
+                  setTargetStatus('completed');
+                  handleApplyStatus('completed');
+                }}
+                className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between ${
+                  targetStatus === 'completed'
+                    ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-500 text-emerald-800 dark:text-emerald-300 ring-2 ring-emerald-500/20 font-bold'
+                    : 'bg-slate-50 dark:bg-slate-700/40 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-emerald-400'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <span className="text-lg">✅</span>
+                  <div>
+                    <span className="text-xs sm:text-sm font-bold block">Completada</span>
+                    <span className="text-[11px] font-normal text-slate-400 dark:text-slate-400">Marca las tareas como finalizadas y archivadas</span>
                   </div>
-                );
-              })}
+                </div>
+                <button
+                  type="button"
+                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] rounded-xl shrink-0"
+                >
+                  Aplicar
+                </button>
+              </div>
+
+              {/* OPCIÓN 2: PENDIENTE */}
+              <div
+                onClick={() => {
+                  setTargetStatus('todo');
+                  handleApplyStatus('todo');
+                }}
+                className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between ${
+                  targetStatus === 'todo'
+                    ? 'bg-slate-100 dark:bg-slate-700 border-slate-400 text-slate-800 dark:text-slate-100 ring-2 ring-slate-400/20 font-bold'
+                    : 'bg-slate-50 dark:bg-slate-700/40 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-slate-400'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <span className="text-lg">⏳</span>
+                  <div>
+                    <span className="text-xs sm:text-sm font-bold block">Pendiente</span>
+                    <span className="text-[11px] font-normal text-slate-400 dark:text-slate-400">Tarea en bandeja de trabajo por realizar</span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="px-2.5 py-1 bg-slate-700 hover:bg-slate-600 text-white font-bold text-[11px] rounded-xl shrink-0"
+                >
+                  Aplicar
+                </button>
+              </div>
+
+              {/* OPCIÓN 3: EN CURSO */}
+              <div
+                onClick={() => {
+                  setTargetStatus('in_progress');
+                  handleApplyStatus('in_progress');
+                }}
+                className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between ${
+                  targetStatus === 'in_progress'
+                    ? 'bg-blue-50 dark:bg-blue-950/40 border-blue-500 text-blue-800 dark:text-blue-300 ring-2 ring-blue-500/20 font-bold'
+                    : 'bg-slate-50 dark:bg-slate-700/40 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-blue-400'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <span className="text-lg">🚀</span>
+                  <div>
+                    <span className="text-xs sm:text-sm font-bold block">En Curso</span>
+                    <span className="text-[11px] font-normal text-slate-400 dark:text-slate-400">Actualmente en elaboración activa</span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white font-bold text-[11px] rounded-xl shrink-0"
+                >
+                  Aplicar
+                </button>
+              </div>
+
+              {/* OPCIÓN 4: RETENIDO / EN ESPERA (CON DESPLEGABLE DINÁMICO DE DEPARTAMENTOS) */}
+              <div
+                onClick={() => setTargetStatus('waiting_on_third_party')}
+                className={`p-3 rounded-2xl border transition-all cursor-pointer space-y-2.5 ${
+                  targetStatus === 'waiting_on_third_party'
+                    ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-500 text-amber-900 dark:text-amber-200 ring-2 ring-amber-500/20'
+                    : 'bg-slate-50 dark:bg-slate-700/40 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-amber-400'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <span className="text-lg">⚠️</span>
+                    <div>
+                      <span className="text-xs sm:text-sm font-bold block">Retenido / En Espera de Terceros</span>
+                      <span className="text-[11px] font-normal text-slate-500 dark:text-slate-400">A la espera de firma, informe, plataforma o terceros</span>
+                    </div>
+                  </div>
+                  {targetStatus !== 'waiting_on_third_party' && (
+                    <span className="text-xs font-bold text-amber-600 dark:text-amber-400">Elegir ▾</span>
+                  )}
+                </div>
+
+                {/* DESPLEGABLE DINÁMICO CUANDO SE SELECCIONA RETENIDO */}
+                {targetStatus === 'waiting_on_third_party' && (
+                  <div className="pt-2 border-t border-amber-200 dark:border-amber-800/60 space-y-2.5" onClick={(e) => e.stopPropagation()}>
+                    <label className="block text-[11px] font-bold text-amber-900 dark:text-amber-200">
+                      Seleccionar o escribir Departamento / Entidad Retenedora:
+                    </label>
+
+                    {/* Desplegable Select */}
+                    <select
+                      value={targetBlockedBy}
+                      onChange={(e) => setTargetBlockedBy(e.target.value)}
+                      className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-amber-400 dark:border-amber-700 rounded-xl text-xs font-semibold text-slate-800 dark:text-slate-100 outline-none"
+                    >
+                      {COMMON_DEPARTMENTS.map((dept) => (
+                        <option key={dept} value={dept}>{dept}</option>
+                      ))}
+                      <option value="Personalizado">Otro (escribir abajo)...</option>
+                    </select>
+
+                    {/* Input manual */}
+                    <input
+                      type="text"
+                      value={targetBlockedBy}
+                      onChange={(e) => setTargetBlockedBy(e.target.value)}
+                      placeholder="Ej. Plataforma Gestiona, Intervención, Proveedor..."
+                      className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 outline-none"
+                    />
+
+                    {/* Botones de Atajos Rápidos */}
+                    <div className="flex flex-wrap gap-1 pt-0.5">
+                      {['Plataforma Gestiona', 'Intervención', 'Zaira y Ana', 'Secretaría', 'Firma Alcaldía'].map(dept => (
+                        <button
+                          key={dept}
+                          type="button"
+                          onClick={() => setTargetBlockedBy(dept)}
+                          className={`px-2 py-0.5 text-[10px] rounded-lg font-medium transition-all ${
+                            targetBlockedBy === dept
+                              ? 'bg-amber-600 text-white font-bold'
+                              : 'bg-amber-100/80 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300 hover:bg-amber-200'
+                          }`}
+                        >
+                          {dept}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="pt-2 flex justify-end">
+                      <button
+                        type="button"
+                        disabled={isProcessing || !targetBlockedBy.trim()}
+                        onClick={() => handleApplyStatus('waiting_on_third_party')}
+                        className="w-full py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all disabled:opacity-50"
+                      >
+                        {isProcessing ? 'Aplicando...' : `Aplicar Retención por "${targetBlockedBy}"`}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
             </div>
 
-            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-700">
+            <div className="flex justify-end pt-1">
               <button
                 type="button"
                 onClick={() => setActiveModal(null)}
-                className="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+                className="px-4 py-1.5 text-xs font-semibold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
               >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                disabled={isProcessing}
-                onClick={() => handleApplyStatus()}
-                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-md cursor-pointer disabled:opacity-50"
-              >
-                {isProcessing ? 'Aplicando...' : `Aplicar Estado a ${count} tareas`}
+                Cerrar
               </button>
             </div>
           </div>
@@ -698,10 +717,19 @@ export default function BulkTaskActionBar({
       {/* 2. MODAL CAMBIAR PRIORIDAD */}
       {activeModal === 'priority' && (
         <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in">
-          <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 w-full max-w-sm border border-slate-200 dark:border-slate-700 shadow-2xl space-y-4 animate-fade-in-up">
-            <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-              <span>🔴</span> Cambiar Prioridad ({count} tareas)
-            </h3>
+          <div className="bg-white dark:bg-slate-800 rounded-3xl p-5 sm:p-6 w-full max-w-sm border border-slate-200 dark:border-slate-700 shadow-2xl space-y-4 animate-fade-in-up">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                <span>🔴</span> Cambiar Prioridad ({count} tareas)
+              </h3>
+              <button
+                type="button"
+                onClick={() => setActiveModal(null)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-sm font-bold"
+              >
+                ✕
+              </button>
+            </div>
             
             <div className="space-y-2">
               {[
@@ -712,7 +740,10 @@ export default function BulkTaskActionBar({
                 <button
                   key={p.key}
                   type="button"
-                  onClick={() => setTargetPriority(p.key as any)}
+                  onClick={() => {
+                    setTargetPriority(p.key as any);
+                    handleApplyPriority(p.key as any);
+                  }}
                   className={`w-full p-3 rounded-2xl border text-left text-xs font-bold flex items-center justify-between transition-all cursor-pointer ${
                     targetPriority === p.key
                       ? 'bg-indigo-50 dark:bg-indigo-950/60 border-indigo-500 text-indigo-700 dark:text-indigo-300 ring-2 ring-indigo-500/20'
@@ -723,26 +754,18 @@ export default function BulkTaskActionBar({
                     <span className="block text-sm">{p.label}</span>
                     <span className="text-[10px] font-normal text-slate-400 dark:text-slate-400">{p.desc}</span>
                   </div>
-                  {targetPriority === p.key && <span className="text-base">✓</span>}
+                  <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400">Aplicar</span>
                 </button>
               ))}
             </div>
 
-            <div className="flex justify-end gap-2 pt-2">
+            <div className="flex justify-end pt-1">
               <button
                 type="button"
                 onClick={() => setActiveModal(null)}
-                className="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+                className="px-4 py-1.5 text-xs font-semibold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
               >
                 Cancelar
-              </button>
-              <button
-                type="button"
-                disabled={isProcessing}
-                onClick={handleApplyPriority}
-                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-md cursor-pointer disabled:opacity-50"
-              >
-                {isProcessing ? 'Aplicando...' : 'Aplicar Prioridad'}
               </button>
             </div>
           </div>
@@ -752,10 +775,19 @@ export default function BulkTaskActionBar({
       {/* 3. MODAL CAMBIAR TIEMPO */}
       {activeModal === 'time' && (
         <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in">
-          <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 w-full max-w-sm border border-slate-200 dark:border-slate-700 shadow-2xl space-y-4 animate-fade-in-up">
-            <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-              <span>⏱️</span> Cambiar Tiempo Estimado
-            </h3>
+          <div className="bg-white dark:bg-slate-800 rounded-3xl p-5 sm:p-6 w-full max-w-sm border border-slate-200 dark:border-slate-700 shadow-2xl space-y-4 animate-fade-in-up">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                <span>⏱️</span> Cambiar Tiempo Estimado
+              </h3>
+              <button
+                type="button"
+                onClick={() => setActiveModal(null)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-sm font-bold"
+              >
+                ✕
+              </button>
+            </div>
             
             <div className="space-y-3">
               <label className="block text-xs font-bold text-slate-500 dark:text-slate-400">
@@ -793,25 +825,24 @@ export default function BulkTaskActionBar({
                   onChange={(e) => setTargetMinutes(Number(e.target.value))}
                   className="w-24 px-2 py-1.5 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl text-xs font-bold text-center text-slate-800 dark:text-slate-100"
                 />
-                <span className="text-xs font-bold text-slate-400">minutos</span>
+                <span className="text-xs font-bold text-slate-400">min</span>
+                <button
+                  type="button"
+                  onClick={() => handleApplyTime()}
+                  className="ml-auto px-3 py-1.5 bg-indigo-600 text-white text-xs font-bold rounded-xl"
+                >
+                  Guardar
+                </button>
               </div>
             </div>
 
-            <div className="flex justify-end gap-2 pt-3">
+            <div className="flex justify-end pt-1">
               <button
                 type="button"
                 onClick={() => setActiveModal(null)}
-                className="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+                className="px-4 py-1.5 text-xs font-semibold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
               >
                 Cancelar
-              </button>
-              <button
-                type="button"
-                disabled={isProcessing}
-                onClick={() => handleApplyTime()}
-                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-md cursor-pointer disabled:opacity-50"
-              >
-                {isProcessing ? 'Aplicando...' : 'Guardar Minutos'}
               </button>
             </div>
           </div>
@@ -821,10 +852,19 @@ export default function BulkTaskActionBar({
       {/* 4. MODAL CAMBIAR FECHA DE VENCIMIENTO */}
       {activeModal === 'date' && (
         <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in">
-          <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 w-full max-w-md border border-slate-200 dark:border-slate-700 shadow-2xl space-y-4 animate-fade-in-up">
-            <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-              <span>📅</span> Asignar Fecha Límite ({count} tareas)
-            </h3>
+          <div className="bg-white dark:bg-slate-800 rounded-3xl p-5 sm:p-6 w-full max-w-md border border-slate-200 dark:border-slate-700 shadow-2xl space-y-4 animate-fade-in-up">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                <span>📅</span> Asignar Fecha Límite ({count} tareas)
+              </h3>
+              <button
+                type="button"
+                onClick={() => setActiveModal(null)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-sm font-bold"
+              >
+                ✕
+              </button>
+            </div>
             
             {/* Opciones rápidas de fecha */}
             <div className="grid grid-cols-3 gap-2">
@@ -872,7 +912,7 @@ export default function BulkTaskActionBar({
                 <button
                   type="button"
                   onClick={() => setActiveModal(null)}
-                  className="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+                  className="px-3 py-1.5 text-xs font-semibold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
                 >
                   Cancelar
                 </button>
@@ -880,7 +920,7 @@ export default function BulkTaskActionBar({
                   type="button"
                   disabled={isProcessing || !targetDateStr}
                   onClick={() => handleApplyDueDate()}
-                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-md cursor-pointer disabled:opacity-50"
+                  className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-md cursor-pointer disabled:opacity-50"
                 >
                   {isProcessing ? 'Aplicando...' : 'Guardar Fecha'}
                 </button>
@@ -893,10 +933,19 @@ export default function BulkTaskActionBar({
       {/* 5. MODAL CAMBIAR CONCEJALÍA */}
       {activeModal === 'concejalia' && (
         <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in">
-          <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 w-full max-w-sm border border-slate-200 dark:border-slate-700 shadow-2xl space-y-4 animate-fade-in-up">
-            <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-              <span>🏛️</span> Reasignar Concejalía ({count} tareas)
-            </h3>
+          <div className="bg-white dark:bg-slate-800 rounded-3xl p-5 sm:p-6 w-full max-w-sm border border-slate-200 dark:border-slate-700 shadow-2xl space-y-4 animate-fade-in-up">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                <span>🏛️</span> Reasignar Concejalía ({count} tareas)
+              </h3>
+              <button
+                type="button"
+                onClick={() => setActiveModal(null)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-sm font-bold"
+              >
+                ✕
+              </button>
+            </div>
             
             <div className="space-y-2">
               <label className="block text-xs font-bold text-slate-500 dark:text-slate-400">
@@ -914,19 +963,19 @@ export default function BulkTaskActionBar({
               </select>
             </div>
 
-            <div className="flex justify-end gap-2 pt-3">
+            <div className="flex justify-end gap-2 pt-2">
               <button
                 type="button"
                 onClick={() => setActiveModal(null)}
-                className="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+                className="px-4 py-1.5 text-xs font-semibold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
               >
                 Cancelar
               </button>
               <button
                 type="button"
                 disabled={isProcessing || !targetConcejalia}
-                onClick={handleApplyConcejalia}
-                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-md cursor-pointer disabled:opacity-50"
+                onClick={() => handleApplyConcejalia()}
+                className="px-5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-md cursor-pointer disabled:opacity-50"
               >
                 {isProcessing ? 'Aplicando...' : 'Reasignar Concejalía'}
               </button>
@@ -935,79 +984,22 @@ export default function BulkTaskActionBar({
         </div>
       )}
 
-      {/* 6. MODAL ASIGNAR RETENCIÓN / TERCEROS */}
-      {activeModal === 'blocked' && (
+      {/* 6. MODAL EDITAR NOTAS MASIVAS */}
+      {activeModal === 'notes' && (
         <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in">
-          <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 w-full max-w-md border border-slate-200 dark:border-slate-700 shadow-2xl space-y-4 animate-fade-in-up">
-            <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-              <span>⚠️</span> Marcar Retenido por Terceros ({count} tareas)
-            </h3>
-            
-            <div className="space-y-3">
-              <label className="block text-xs font-bold text-slate-600 dark:text-slate-400">
-                Departamento, Entidad o Motivo retenedor:
-              </label>
-              <input
-                type="text"
-                value={targetBlockedBy}
-                onChange={(e) => setTargetBlockedBy(e.target.value)}
-                placeholder="Ej. Plataforma Gestiona, Intervención, Zaira y Ana..."
-                className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-700 border border-amber-300 dark:border-amber-700 rounded-xl text-xs font-medium text-slate-800 dark:text-slate-100 outline-none"
-              />
-
-              <div className="space-y-1.5">
-                <span className="text-[11px] font-bold text-slate-400">Atajos rápidos:</span>
-                <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
-                  {COMMON_DEPARTMENTS.map((dept) => (
-                    <button
-                      key={dept}
-                      type="button"
-                      onClick={() => setTargetBlockedBy(dept)}
-                      className={`px-2.5 py-1 text-xs rounded-xl font-medium transition-all cursor-pointer border ${
-                        targetBlockedBy === dept
-                          ? 'bg-amber-600 text-white border-amber-600'
-                          : 'bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-600 hover:border-amber-400'
-                      }`}
-                    >
-                      {dept}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <p className="text-[11px] text-slate-400">
-                Las {count} tareas seleccionadas pasarán a estado "En Espera" con esta entidad como responsable.
-              </p>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-3">
+          <div className="bg-white dark:bg-slate-800 rounded-3xl p-5 sm:p-6 w-full max-w-md border border-slate-200 dark:border-slate-700 shadow-2xl space-y-4 animate-fade-in-up">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                <span>📝</span> Anotaciones en Bloque ({count} tareas)
+              </h3>
               <button
                 type="button"
                 onClick={() => setActiveModal(null)}
-                className="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-sm font-bold"
               >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                disabled={isProcessing || !targetBlockedBy.trim()}
-                onClick={() => handleApplyStatus('waiting_on_third_party')}
-                className="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl shadow-md cursor-pointer disabled:opacity-50"
-              >
-                {isProcessing ? 'Aplicando...' : 'Aplicar Retención'}
+                ✕
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* 7. MODAL EDITAR NOTAS / OBSERVACIONES MASIVAS */}
-      {activeModal === 'notes' && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in">
-          <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 w-full max-w-md border border-slate-200 dark:border-slate-700 shadow-2xl space-y-4 animate-fade-in-up">
-            <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-              <span>📝</span> Anotaciones en Bloque ({count} tareas)
-            </h3>
             
             <div className="space-y-3">
               <div className="flex items-center gap-4 text-xs font-bold">
@@ -1019,7 +1011,7 @@ export default function BulkTaskActionBar({
                     onChange={() => setNotesMode('append')}
                     className="text-indigo-600"
                   />
-                  <span>Añadir al final (sin borrar anteriores)</span>
+                  <span>Añadir al final</span>
                 </label>
                 <label className="flex items-center gap-1.5 cursor-pointer">
                   <input
@@ -1042,11 +1034,11 @@ export default function BulkTaskActionBar({
               />
             </div>
 
-            <div className="flex justify-end gap-2 pt-3">
+            <div className="flex justify-end gap-2 pt-2">
               <button
                 type="button"
                 onClick={() => setActiveModal(null)}
-                className="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+                className="px-4 py-1.5 text-xs font-semibold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
               >
                 Cancelar
               </button>
@@ -1054,7 +1046,7 @@ export default function BulkTaskActionBar({
                 type="button"
                 disabled={isProcessing}
                 onClick={handleApplyNotes}
-                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-md cursor-pointer disabled:opacity-50"
+                className="px-5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-md cursor-pointer disabled:opacity-50"
               >
                 {isProcessing ? 'Aplicando...' : 'Guardar Notas'}
               </button>
@@ -1063,13 +1055,13 @@ export default function BulkTaskActionBar({
         </div>
       )}
 
-      {/* 8. MODAL EDICIÓN MULTICAMPO AVANZADA */}
+      {/* 7. MODAL EDICIÓN MULTICAMPO AVANZADA */}
       {activeModal === 'all' && (
         <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in">
-          <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 w-full max-w-lg border border-slate-200 dark:border-slate-700 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto animate-fade-in-up">
+          <div className="bg-white dark:bg-slate-800 rounded-3xl p-5 sm:p-6 w-full max-w-lg border border-slate-200 dark:border-slate-700 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto animate-fade-in-up">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-                <span>✏️</span> Edición Masiva Avanzada ({count} tareas)
+                <span>✏️</span> Edición Masiva Multicampo ({count} tareas)
               </h3>
               <button
                 type="button"
@@ -1081,7 +1073,7 @@ export default function BulkTaskActionBar({
             </div>
 
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Marca las casillas de los campos que deseas modificar a la vez en todas las tareas seleccionadas:
+              Marca los campos que deseas modificar a la vez en todas las tareas:
             </p>
 
             <div className="space-y-3 divide-y divide-slate-100 dark:divide-slate-700/60">
@@ -1103,7 +1095,7 @@ export default function BulkTaskActionBar({
                     <select
                       value={targetStatus}
                       onChange={(e) => setTargetStatus(e.target.value as TaskStatus)}
-                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl text-xs font-bold"
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl text-xs font-bold text-slate-800 dark:text-slate-100"
                     >
                       <option value="completed">✅ Completada</option>
                       <option value="todo">⏳ Pendiente</option>
@@ -1243,46 +1235,6 @@ export default function BulkTaskActionBar({
                 </div>
               )}
 
-              {/* CAMPO MI DÍA */}
-              <div className="pt-2">
-                <label className="flex items-center gap-2 text-xs font-bold text-slate-800 dark:text-slate-200 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={enableFields.myDay}
-                    onChange={(e) => setEnableFields(prev => ({ ...prev, myDay: e.target.checked }))}
-                    className="w-4 h-4 text-indigo-600 rounded"
-                  />
-                  <span>☀️ Estado en "Mi Día"</span>
-                </label>
-
-                {enableFields.myDay && (
-                  <div className="mt-2 pl-6 flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setMultiMyDay(true)}
-                      className={`flex-1 py-1.5 text-xs font-bold rounded-xl border ${
-                        multiMyDay
-                          ? 'bg-amber-600 text-white border-amber-600'
-                          : 'bg-slate-50 dark:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-200'
-                      }`}
-                    >
-                      ☀️ Añadir a Mi Día
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setMultiMyDay(false)}
-                      className={`flex-1 py-1.5 text-xs font-bold rounded-xl border ${
-                        !multiMyDay
-                          ? 'bg-slate-800 text-white border-slate-800'
-                          : 'bg-slate-50 dark:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-200'
-                      }`}
-                    >
-                      🌑 Quitar de Mi Día
-                    </button>
-                  </div>
-                )}
-              </div>
-
               {/* CAMPO NOTAS */}
               <div className="pt-2">
                 <label className="flex items-center gap-2 text-xs font-bold text-slate-800 dark:text-slate-200 cursor-pointer">
@@ -1324,7 +1276,7 @@ export default function BulkTaskActionBar({
                 onClick={handleApplyMultiField}
                 className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-md cursor-pointer disabled:opacity-50"
               >
-                {isProcessing ? 'Guardando...' : 'Aplicar Cambios Seleccionados'}
+                {isProcessing ? 'Guardando...' : 'Aplicar Cambios'}
               </button>
             </div>
           </div>
