@@ -140,6 +140,7 @@ export default function ExpedienteDetailPanel({ project, onClose }: Props) {
         if (data.isDeleted) return;
         list.push({ id: data.projectId || data.id || d.id, ...data } as Project);
       });
+      list.sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { numeric: true, sensitivity: 'base' }));
       setChildProjects(list);
     });
 

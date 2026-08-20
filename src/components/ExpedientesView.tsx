@@ -798,7 +798,9 @@ export default function ExpedientesView({ user, searchQuery = '', onSelectTask, 
             // RENDER DE MACRO-EXPEDIENTE (ESTRUCTURA DE 3 NIVELES)
             const renderMacroProjectCard = (macroProj: Project) => {
               const isExpanded = expandedProjects.has(macroProj.id!);
-              const childCMs = projectsInGroup.filter(p => isChildOfMacro(p, macroProj));
+              const childCMs = projectsInGroup
+                .filter(p => isChildOfMacro(p, macroProj))
+                .sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { numeric: true, sensitivity: 'base' }));
               
               // Todas las tareas de todos los sub-contratos asociados al Macro
               const allChildTasks = allTareas.filter(t => 
