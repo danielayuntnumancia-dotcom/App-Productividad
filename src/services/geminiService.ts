@@ -37,7 +37,7 @@ Tu función es ayudar a los responsables municipales y funcionarios a:
    - Providencias de inicio de expediente, pliegos de prescripciones técnicas y requerimientos de subsanación de documentación.
    - Decretos y propuestas de resolución.
    - Correos formales e internos para agilizar trámites con departamentos (Intervención, Tesorería, Secretaría General, Plataforma Gestiona, proveedores externos).
-2. Desglosar necesidades o proyectos municipales en una lista ordenada de tareas y trámites secuenciales con tiempos estimados (ej: 1. Presupuestos, 2. Declaración responsable, 3. Certificado AEAT, 4. Certificado TGSS, 5. Contrato menor, 6. Firma en Gestiona).
+2. Desglosar necesidades o proyectos municipales en una lista ordenada de tareas y trámites secuenciales con tiempos estimados.
 3. Asesorar sobre plazos administrativos, cómputo de días hábiles/naturales y silencio administrativo.
 
 Estilo de respuesta:
@@ -60,94 +60,104 @@ export async function askGemini(
   if (contextData && (contextData.tasks?.length || contextData.projects?.length)) {
     const summaryContext: string[] = [];
     if (contextData.projects?.length) {
-      summaryContext.push(`Expedientes activos del usuario (${contextData.projects.length}): ${contextData.projects.slice(0, 8).map(p => `${p.name} [${p.concejalia || 'General'}]`).join(', ')}`);
+      summaryContext.push(`Expedientes activos del usuario: ${contextData.projects.slice(0, 8).map(p => p.name).join(', ')}`);
     }
     if (contextData.tasks?.length) {
-      const pendingTasks = contextData.tasks.filter(t => !t.completada && t.status !== 'completed').slice(0, 10);
-      summaryContext.push(`Algunas tareas pendientes actuales (${pendingTasks.length}): ${pendingTasks.map(t => t.titulo || t.title).join(', ')}`);
+      const pendingTasks = contextData.tasks.filter(t => !t.completada && t.status !== 'completed').slice(0, 8);
+      if (pendingTasks.length > 0) {
+        summaryContext.push(`Tareas pendientes: ${pendingTasks.map(t => t.titulo || t.title).join(', ')}`);
+      }
     }
     if (summaryContext.length > 0) {
-      contextualizedPrompt = `[Contexto actual del usuario en FocusFlow:\n${summaryContext.join('\n')}]\n\nSolicitud del usuario:\n${prompt}`;
+      contextualizedPrompt = `[Contexto: ${summaryContext.join('. ')}]\n\n${prompt}`;
     }
   }
 
-  // Construir historial válido para la API de Gemini:
-  // 1. Descartar cualquier mensaje de bienvenida inicial con rol 'model' para que comience en 'user'
+  // Construir historial válido: debe empezar siempre por 'user', alternando user/model
   const validHistory = history.filter((msg, idx) => {
-    // Si el primer mensaje es del modelo (bienvenida), omitirlo
-    if (idx === 0 && msg.role === 'model') return false;
+    if (idx === 0 && msg.role === 'model') return false; // Descartar bienvenida inicial
     return true;
   });
 
   const formattedContents: Array<{ role: string; parts: Array<{ text: string }> }> = [];
 
-  // Asegurar alternancia user -> model -> user
   for (const msg of validHistory.slice(-6)) {
     const role = msg.role === 'user' ? 'user' : 'model';
-    // Evitar roles duplicados seguidos si ocurriera
     const lastRole = formattedContents[formattedContents.length - 1]?.role;
     if (lastRole === role) {
+      // Combinar mensajes consecutivos del mismo rol
       formattedContents[formattedContents.length - 1].parts[0].text += `\n${msg.text}`;
     } else {
-      formattedContents.push({
-        role,
-        parts: [{ text: msg.text }]
-      });
+      formattedContents.push({ role, parts: [{ text: msg.text }] });
     }
   }
 
-  // Si el historial termina en user o está vacío, añadir el nuevo prompt
+  // Añadir el nuevo mensaje del usuario
   const lastItem = formattedContents[formattedContents.length - 1];
   if (lastItem && lastItem.role === 'user') {
+    // Reemplazar o combinar con el último user turn
     lastItem.parts[0].text = contextualizedPrompt;
   } else {
-    formattedContents.push({
-      role: 'user',
-      parts: [{ text: contextualizedPrompt }]
-    });
+    formattedContents.push({ role: 'user', parts: [{ text: contextualizedPrompt }] });
   }
 
-  const modelsToTry = ['gemini-2.0-flash', 'gemini-1.5-flash'];
+  // Combinaciones de modelo + versión de API a intentar
+  const attempts = [
+    { model: 'gemini-2.0-flash',        apiVer: 'v1beta' },
+    { model: 'gemini-1.5-flash',        apiVer: 'v1beta' },
+    { model: 'gemini-2.0-flash',        apiVer: 'v1' },
+    { model: 'gemini-1.5-flash',        apiVer: 'v1' },
+    { model: 'gemini-1.5-flash-latest', apiVer: 'v1beta' },
+    { model: 'gemini-pro',              apiVer: 'v1' },
+  ];
+
   let lastError: any = null;
 
-  for (const modelName of modelsToTry) {
+  for (const { model, apiVer } of attempts) {
     try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(apiKey)}`;
-      
+      const url = `https://generativelanguage.googleapis.com/${apiVer}/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
+
+      const requestBody: any = {
+        contents: formattedContents,
+        generationConfig: {
+          temperature: 0.4,
+          maxOutputTokens: 2048,
+        }
+      };
+
+      // systemInstruction solo está disponible en v1beta
+      if (apiVer === 'v1beta') {
+        requestBody.systemInstruction = { parts: [{ text: SYSTEM_INSTRUCTION }] };
+      }
+
       const response = await fetch(url, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-goog-api-key': apiKey
-        },
-        body: JSON.stringify({
-          systemInstruction: {
-            parts: [{ text: SYSTEM_INSTRUCTION }]
-          },
-          contents: formattedContents,
-          generationConfig: {
-            temperature: 0.4,
-            maxOutputTokens: 2048,
-          }
-        })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody)
       });
 
       if (!response.ok) {
         const errJson = await response.json().catch(() => ({}));
-        const errMsg = errJson?.error?.message || `HTTP ${response.status}: ${response.statusText}`;
-        throw new Error(errMsg);
+        const errMsg = errJson?.error?.message || `HTTP ${response.status}`;
+        console.warn(`Fallo ${apiVer}/${model}: ${errMsg}`);
+        lastError = new Error(errMsg);
+        continue; // Intentar siguiente combinación
       }
 
       const data = await response.json();
-      const generatedText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (generatedText) {
-        return generatedText.trim();
-      }
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (text) return text.trim();
+
     } catch (err: any) {
-      console.warn(`Error al consultar ${modelName}:`, err?.message);
+      console.warn(`Error ${model} (${apiVer}):`, err?.message);
       lastError = err;
     }
   }
 
-  throw lastError || new Error("No se pudo obtener respuesta del modelo de IA.");
+  // Mensaje de error descriptivo al usuario
+  const errMsg = lastError?.message || 'Error desconocido';
+  if (errMsg.includes('API_KEY_INVALID') || errMsg.includes('CONSUMER_INVALID') || errMsg.includes('permission')) {
+    throw new Error("La clave de API no tiene permisos para usar Gemini. Asegúrate de que la 'Generative Language API' esté habilitada en tu proyecto de Google Cloud Console.");
+  }
+  throw new Error(`No se pudo conectar con el Asistente IA: ${errMsg}`);
 }
