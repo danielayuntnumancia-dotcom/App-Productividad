@@ -57,10 +57,11 @@ Estilo de respuesta:
 
 const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
 const GROQ_MODELS = [
-  'llama-3.3-70b-versatile',    // Llama 3.3 70B — el más capaz (gratis)
-  'llama3-70b-8192',            // Llama 3 70B — versión estable
-  'gemma2-9b-it',               // Google Gemma 2 9B — rápido y eficiente
-  'llama3-8b-8192',             // Llama 3 8B — ultra rápido
+  'openai/gpt-oss-120b',   // GPT-OSS 120B — el más potente disponible
+  'groq/compound',         // Groq Compound — modelo propietario Groq
+  'qwen/qwen3.6-27b',      // Qwen 3.6 27B — eficiente y capaz
+  'groq/compound-mini',    // Groq Compound Mini — rápido
+  'openai/gpt-oss-20b',    // GPT-OSS 20B — ligero de respaldo
 ];
 
 export async function askGemini(
@@ -126,7 +127,7 @@ export async function askGemini(
           model,
           messages,
           temperature: 0.4,
-          max_tokens: 2048,
+          max_tokens: 4096,
           stream: false
         })
       });
