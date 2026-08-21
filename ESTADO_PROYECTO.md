@@ -1,28 +1,51 @@
-# Estado del Proyecto: FocusFlow 2.0
+# Estado del Proyecto - FocusFlow (App de Productividad)
 
-## Logros de esta sesión
-- **Integración de Asistente IA con Groq API:**
-  - Integración completa del Asistente Inteligente en `AiAssistantModal` utilizando la API de **Groq** con modelos de alto rendimiento (`openai/gpt-oss-120b`, `groq/compound`, `llama-3.3-70b-versatile`, `openai/gpt-oss-20b`).
-  - Superadas las restricciones geográficas de otras APIs en Europa con servicio gratuito y ultrarrápido.
-  - Sistema de fallback automático en cascada entre modelos para garantizar siempre disponibilidad de respuesta.
-- **Renderizado de Markdown Visual y Enriquecido:**
-  - Instalación y configuración de `react-markdown` y `remark-gfm`.
-  - Renderizado completo de **tablas estructuradas** con cabeceras temáticas y bordes contrastados, negritas, cursivas, listas con viñetas destacadas y bloques de código.
-  - Botón de un solo clic **"📋 Copiar texto"** optimizado para transferir borradores directamente a Word, Gestiona o correo electrónico.
-- **Persistencia y Configuración Dual de Claves API:**
-  - Configuración híbrida: lectura desde variable de entorno (`VITE_GROQ_API_KEY`) y soporte para configuración manual en la interfaz mediante panel de ajustes (⚙️) guardado en `localStorage`.
-- **Inyección de Contexto en Tiempo Real:**
-  - El asistente recibe automáticamente como contexto los expedientes activos y tareas pendientes del usuario para ofrecer respuestas personalizadas y precisas.
-- **Workflow Global de Integración IA:**
-  - Creación del workflow reusable `/integracion-ia` en el sistema global para automatizar la integración de asistentes Groq en otros proyectos React/Vite/Next.js.
-- **Edición Masiva en Lote Avanzada (sesión previa consolidada):**
-  - Barra flotante de acciones masivas (`BulkTaskActionBar`) con formato píldora *glassmorphism*, marcado rápido de tareas completadas, selector de estado con motivos de retención, edición por lotes de prioridad, tiempo y fechas.
-- **Preservación de Macro-Expedientes y PWA:**
-  - Vinculación robusta de contratos menores hijos de macro-lotes y configuración completa de PWA con icono oficial en Windows.
+**Fecha de actualización:** 21 de Agosto de 2026  
+**Repositorio GitHub:** `https://github.com/danielayuntnumancia-dotcom/App-Productividad.git` (Rama `main`)  
+**Despliegue Firebase Hosting:** `https://app-productividad-54955.web.app`
 
-## Tareas pendientes para la próxima sesión
-- **Streaming de respuestas en tiempo real:** Implementar renderizado progresivo token a token (Server-Sent Events / streaming) en el asistente de IA para una experiencia aún más interactiva.
-- **Ampliación de Atajos y Prompts Especializados:** Añadir atajos rápidos para pliegos de prescripciones técnicas, solicitudes de ofertas a tres empresas y justificaciones de subvenciones.
-- **Notificaciones push nativas:** Evaluar alertas de vencimiento en segundo plano para Windows y dispositivos móviles.
-- **Paleta de Comandos (`Ctrl+K`):** Evolucionar el buscador global hacia un creador y ejecutor rápido de trámites mediante comandos de teclado.
-- **Métricas y Analítica:** Expandir el panel de analítica con tiempos medios de tramitación y reparto de carga por concejalías.
+---
+
+## 🏆 Logros de esta sesión
+
+### 1. Cerebro Ontológico Dinámico de FocusFlow para la IA (Groq AI)
+* **Serialización Jerárquica Completa:** Se implementó `buildAppKnowledgeGraph` en `src/services/geminiService.ts`, estructurando en vivo toda la base de datos:
+  * Macro-Expedientes (`isMacroProject: true`) vinculando automáticamente todos sus sub-expedientes y contratos menores hijos.
+  * Desglose exacto paso a paso ($1..N$) por expediente con matrices de cumplimiento precalculadas (`¿Pasos 1-6 hechos y 7-8 pendientes?: SÍ/NO`).
+  * Catálogo de plantillas oficiales de fábrica y personalizadas por el usuario.
+  * Concejalías municipales activas.
+* **Integración de Modelos Oficiales Activos en Groq:**
+  * Motor principal: **`openai/gpt-oss-120b`** (120B parámetros, máxima capacidad de razonamiento).
+  * Motores complementarios: **`groq/compound`**, **`qwen/qwen3.6-27b`**, **`groq/compound-mini`**, **`openai/gpt-oss-20b`**.
+* **Blindaje Estricto de Consumo de Tokens:**
+  * Compresión semántica de alta densidad (formato ultra-compacto de 1 línea por expediente).
+  * Poda inteligente de historial truncando mensajes previos largos.
+  * Ajuste de `max_tokens: 800` y límite máximo de carga, asegurando un consumo de ~2.000 tokens por consulta (muy por debajo del límite de 8.000 TPM de Groq Free Tier).
+* **Visor Transparente en Vivo:** Botón **`🧠 Ver Cerebro`** en el modal del asistente para que el usuario pueda inspeccionar en cualquier momento qué datos exactos tiene cargados la IA.
+
+### 2. Acceso Directo y Creación en Lote de Tareas Hijas
+* **Nuevo Modal `QuickChildTasksModal.tsx`:**
+  * Permite añadir múltiples trámites en lote antes de guardar los cambios.
+  * Sugerencias de trámites frecuentes con 1 clic (`+ Presupuesto`, `+ Declaración Responsable`, `+ AEAT`, `+ TGSS`, `+ Memoria`, `+ RC`, `+ Firma Gestiona`, etc.).
+  * Selector **«Plantilla rápida»** para volcar todos los pasos de cualquier plantilla oficial o personalizada directamente en el expediente.
+  * Control total de todos los parámetros por cada trámite: Título, Concejalía, Prioridad, Tiempo estimado, Fecha límite (`CustomDatePicker`), Estado inicial, Retenido por / Motivo, Drive, Notas y ⭐ En Mi Día.
+  * Auto-numeración correlativa inteligente de pasos.
+  * Guardado atómico en Firestore mediante `writeBatch`.
+* **Botón de Acceso Directo `➕ Trámites`:**
+  * Integrado directamente en las tarjetas de **Expedientes Ordinarios**, **Sub-Expedientes de Macro-Expedientes** y **Contratos Menores**.
+  * Accesible también al final de la lista de tareas dentro del expediente expandido.
+
+### 3. Sincronización y Despliegue
+* Código versionado y subido a GitHub (rama `main`).
+* Desplegado con éxito y validado en Firebase Hosting.
+
+---
+
+## 📋 Tareas pendientes para la próxima sesión
+
+1. **Optimizaciones del Asistente:**
+   * Evaluar opciones para streaming de respuestas si se requiere sensación de inmediatez token a token.
+2. **Ampliación de Plantillas Municipales:**
+   * Añadir nuevas plantillas predefinidas según las necesidades de las distintas concejalías.
+3. **Mantenimiento General:**
+   * Monitorizar el rendimiento de Firestore y los tiempos de respuesta de la API de Groq en producción.
