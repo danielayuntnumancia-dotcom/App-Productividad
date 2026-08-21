@@ -28,7 +28,9 @@ const LoadingSpinner = () => (
     <div className="w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
   </div>
 );
-import { Tarea, Project } from './types';
+import { Tarea, Project, ExpedienteTemplate } from './types';
+import { EXPEDIENT_TEMPLATES } from './constants/templates';
+import { DEFAULT_CONCEJALIAS } from './hooks/useConcejalias';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { db } from './firebaseConfig';
 import { getTaskDeadlineInfo, getRetentionWarning } from './utils/deadlines';
@@ -41,6 +43,9 @@ export default function App() {
   const [selectedTask, setSelectedTask] = useState<Tarea | null>(null);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [allTareas, setAllTareas] = useState<Tarea[]>([]);
+  const [allProjects, setAllProjects] = useState<Project[]>([]);
+  const [allTemplates, setAllTemplates] = useState<ExpedienteTemplate[]>([]);
+  const [allConcejalias, setAllConcejalias] = useState<string[]>(DEFAULT_CONCEJALIAS);
   const [deletedCount, setDeletedCount] = useState<number>(0);
   const [isAlertModalOpen, setIsAlertModalOpen] = useState(false);
   const [isGlobalSearchOpen, setIsGlobalSearchOpen] = useState(false);
@@ -78,7 +83,7 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Escuchar todas las tareas para calcular alertas urgentes globales y papelera
+  // Escuchar todas las entidades (tareas, proyectos, macro-proyectos, plantillas y concejalías)
   useEffect(() => {
     if (!user?.uid) return;
 
@@ -89,18 +94,46 @@ export default function App() {
 
     const unsub = onSnapshot(q, (snapshot) => {
       const tList: Tarea[] = [];
+      const pList: Project[] = [];
+      const customTemplates: ExpedienteTemplate[] = [];
+      const customConcejalias: string[] = [];
       let delCount = 0;
 
       snapshot.forEach((d) => {
         const data = d.data();
         if (data.isDeleted) {
           delCount++;
-        } else if (!data.isTemplate && !data.isConcejalia && !data.isProject) {
+        } else if (data.isProject) {
+          pList.push({ id: data.projectId || data.id || d.id, firestoreDocId: d.id, ...data } as Project);
+        } else if (data.isTemplate) {
+          customTemplates.push({
+            id: d.id,
+            name: data.name || data.nombre || 'Plantilla',
+            concejalia: data.concejalia || data.masterCategory || 'General',
+            descripcion: data.descripcion || data.description || '',
+            tasks: Array.isArray(data.tasks) ? data.tasks : [],
+            isCustom: true,
+            isDefault: !!data.isDefault
+          });
+        } else if (data.isConcejalia) {
+          if (data.name && !customConcejalias.includes(data.name)) {
+            customConcejalias.push(data.name);
+          }
+        } else if (data.type !== 'user_templates_config') {
           tList.push({ id: d.id, ...data } as Tarea);
         }
       });
 
+      const unifiedTemplates: ExpedienteTemplate[] = [
+        ...EXPEDIENT_TEMPLATES.map(t => ({ ...t, isCustom: false })),
+        ...customTemplates
+      ];
+      const unifiedConcejalias = Array.from(new Set([...DEFAULT_CONCEJALIAS, ...customConcejalias]));
+
       setAllTareas(tList);
+      setAllProjects(pList);
+      setAllTemplates(unifiedTemplates);
+      setAllConcejalias(unifiedConcejalias);
       setDeletedCount(delCount);
     });
 
@@ -527,6 +560,9 @@ export default function App() {
           isOpen={isAiAssistantOpen}
           onClose={() => setIsAiAssistantOpen(false)}
           tasks={allTareas}
+          projects={allProjects}
+          templates={allTemplates}
+          concejalias={allConcejalias}
         />
       </Suspense>
 

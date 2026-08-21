@@ -1,53 +1,57 @@
 import React, { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { askGemini, ChatMessage, getStoredApiKey, saveStoredApiKey } from '../services/geminiService';
-import { Tarea, Project } from '../types';
+import { askGemini, ChatMessage, getStoredApiKey, saveStoredApiKey, buildAppKnowledgeGraph } from '../services/geminiService';
+import { Tarea, Project, ExpedienteTemplate } from '../types';
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
   tasks?: Tarea[];
   projects?: Project[];
+  templates?: ExpedienteTemplate[];
+  concejalias?: string[];
 }
 
 const QUICK_PROMPTS = [
   {
-    icon: '✍️',
-    label: 'Memoria Contrato Menor',
-    prompt: 'Redacta un modelo completo de Memoria Justificativa para un Contrato Menor municipal (Ley 9/2017 LCSP), motivando la necesidad, el objeto, que no se fracciona el objeto del contrato y el precio estimado.'
+    icon: '📊',
+    label: 'Estado de Expedientes y Pasos',
+    prompt: '¿Qué expedientes o contratos menores están pendientes de trámites y en qué paso exacto se encuentra cada uno?'
+  },
+  {
+    icon: '🔍',
+    label: 'Filtrar por Trámite / Paso',
+    prompt: '¿Qué expedientes o contratos menores están actualmente pendientes del Paso 7 (o de firmas/envíos)?'
   },
   {
     icon: '📋',
-    label: 'Desglosar Trámites Expediente',
-    prompt: 'Desglosa los trámites preceptivos y tareas secuenciales (con tiempos estimados en minutos) para gestionar un nuevo contrato menor de servicios/obras en un Ayuntamiento.'
+    label: 'Plantillas y Trámites Predefinidos',
+    prompt: '¿Qué plantillas de tramitación existen en FocusFlow y qué pasos estándar componen cada una?'
   },
   {
-    icon: '✉️',
-    label: 'Correo Formal a Intervención',
-    prompt: 'Redacta un correo electrónico formal y educado para solicitar a Intervención/Secretaría agilizar la fiscalización y firma de un expediente en la plataforma Gestiona.'
-  },
-  {
-    icon: '⏱️',
-    label: 'Plazos y Silencio Administrativo',
-    prompt: 'Explica de forma concisa cómo funciona el cómputo de plazos en días hábiles según la Ley 39/2015 y qué efectos tiene el silencio administrativo en procedimientos municipales.'
+    icon: '✍️',
+    label: 'Memoria Contrato Menor',
+    prompt: 'Redacta un modelo completo de Memoria Justificativa para un Contrato Menor municipal (Ley 9/2017 LCSP), motivando la necesidad, el objeto, que no se fracciona el objeto del contrato y el precio estimado.'
   }
 ];
 
-export default function AiAssistantModal({ isOpen, onClose, tasks = [], projects = [] }: Props) {
+export default function AiAssistantModal({ isOpen, onClose, tasks = [], projects = [], templates = [], concejalias = [] }: Props) {
   if (!isOpen) return null;
 
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       role: 'model',
-      text: '¡Hola! Soy tu **Asistente Inteligente de FocusFlow** (motor Groq AI). Puedo ayudarte a redactar memorias justificativas de contratos menores, desglosar trámites de expedientes, redactar comunicaciones formales o asesorarte con plazos administrativos. ¿En qué te ayudo hoy?'
+      text: '¡Hola! Soy tu **Asistente Inteligente y Cerebro de FocusFlow** (motor Groq AI). Tengo acceso en tiempo real a la ontología completa de tu aplicación: **Macro-Expedientes, Expedientes hijos, Trámites paso a paso (1..N), Plantillas y Concejalías**. ¿Qué deseas consultar o tramitar hoy?'
     }
   ]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showBrainPreview, setShowBrainPreview] = useState(false);
   const [customKeyInput, setCustomKeyInput] = useState(getStoredApiKey());
   const [copyFeedbackIdx, setCopyFeedbackIdx] = useState<number | null>(null);
+  const [brainCopied, setBrainCopied] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -58,6 +62,8 @@ export default function AiAssistantModal({ isOpen, onClose, tasks = [], projects
   useEffect(() => {
     scrollToBottom();
   }, [messages, isLoading]);
+
+  const liveKnowledgeText = buildAppKnowledgeGraph({ tasks, projects, templates, concejalias });
 
   const handleSendMessage = async (textToSend?: string) => {
     const text = (textToSend || inputText).trim();
@@ -70,7 +76,7 @@ export default function AiAssistantModal({ isOpen, onClose, tasks = [], projects
     setIsLoading(true);
 
     try {
-      const responseText = await askGemini(text, messages, { tasks, projects });
+      const responseText = await askGemini(text, messages, { tasks, projects, templates, concejalias });
       setMessages([...updatedMessages, { role: 'model', text: responseText }]);
     } catch (err: any) {
       console.error("Error from Gemini Assistant:", err);
@@ -99,6 +105,12 @@ export default function AiAssistantModal({ isOpen, onClose, tasks = [], projects
     setTimeout(() => setCopyFeedbackIdx(null), 2000);
   };
 
+  const handleCopyBrain = () => {
+    navigator.clipboard.writeText(liveKnowledgeText);
+    setBrainCopied(true);
+    setTimeout(() => setBrainCopied(false), 2000);
+  };
+
   return (
     <div className="fixed inset-0 z-60 flex items-center justify-center p-3 sm:p-6 bg-slate-900/70 backdrop-blur-sm animate-fade-in">
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-3xl h-[85vh] max-h-[750px] shadow-2xl flex flex-col overflow-hidden animate-fade-in-up">
@@ -112,14 +124,20 @@ export default function AiAssistantModal({ isOpen, onClose, tasks = [], projects
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="font-extrabold text-slate-800 dark:text-slate-100 text-base sm:text-lg">
-                  Asistente FocusFlow
+                  Cerebro FocusFlow
                 </h3>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-gradient-to-r from-orange-500 to-red-500 text-white shadow-xs">
-                  Groq AI
+                  GPT-OSS 120B
                 </span>
+                {(projects.length > 0 || tasks.length > 0) && (
+                  <span className="hidden sm:inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                    {projects.length} expedientes • {tasks.length} trámites en vivo
+                  </span>
+                )}
               </div>
               <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400">
-                Copiloto de productividad y gestión administrativa municipal
+                Copiloto ontológico de gestión y contratación municipal
               </p>
             </div>
           </div>
@@ -127,7 +145,25 @@ export default function AiAssistantModal({ isOpen, onClose, tasks = [], projects
           <div className="flex items-center gap-1.5">
             <button
               type="button"
-              onClick={() => setShowSettings(!showSettings)}
+              onClick={() => {
+                setShowBrainPreview(!showBrainPreview);
+                if (showSettings) setShowSettings(false);
+              }}
+              className={`p-2 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1 ${
+                showBrainPreview
+                  ? 'bg-purple-600 text-white shadow-xs'
+                  : 'bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-900/50 border border-purple-200 dark:border-purple-800'
+              }`}
+              title="Inspeccionar el cerebro de datos en vivo de la IA"
+            >
+              🧠 Ver Cerebro
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowSettings(!showSettings);
+                if (showBrainPreview) setShowBrainPreview(false);
+              }}
               className={`p-2 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
                 showSettings
                   ? 'bg-indigo-600 text-white'
@@ -162,6 +198,27 @@ export default function AiAssistantModal({ isOpen, onClose, tasks = [], projects
             </button>
           </div>
         </div>
+
+        {/* PANEL INSPECTOR DEL CEREBRO DE DATOS EN VIVO */}
+        {showBrainPreview && (
+          <div className="p-4 bg-purple-50/95 dark:bg-purple-950/60 border-b border-purple-200 dark:border-purple-800 space-y-2 animate-fade-in shrink-0 max-h-64 flex flex-col">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-extrabold text-purple-900 dark:text-purple-200 flex items-center gap-1.5">
+                🧠 Grafo de Conocimiento Ontológico en Tiempo Real ({projects.length} expedientes, {tasks.length} trámites, {templates.length} plantillas)
+              </span>
+              <button
+                type="button"
+                onClick={handleCopyBrain}
+                className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-purple-200 dark:bg-purple-800 hover:bg-purple-300 text-purple-900 dark:text-purple-100 transition-colors cursor-pointer"
+              >
+                {brainCopied ? '✓ Copiado' : 'Copiar Grafo'}
+              </button>
+            </div>
+            <pre className="flex-1 overflow-y-auto p-2.5 bg-slate-900 text-purple-200 rounded-xl text-[10px] font-mono whitespace-pre-wrap leading-tight border border-purple-800/50 select-all max-h-44">
+              {liveKnowledgeText || '(No hay entidades activas en la base de datos)'}
+            </pre>
+          </div>
+        )}
 
         {/* PANEL DE AJUSTES DE CLAVE API */}
         {showSettings && (

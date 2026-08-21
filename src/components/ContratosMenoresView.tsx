@@ -5,8 +5,10 @@ import { User } from 'firebase/auth';
 import { Tarea, Project } from '../types';
 import ExpedienteBuilderModal from './ExpedienteBuilderModal';
 import MacroExpedienteModal from './MacroExpedienteModal';
+import QuickChildTasksModal from './QuickChildTasksModal';
 import BulkTaskActionBar from './BulkTaskActionBar';
 import { useConcejalias } from '../hooks/useConcejalias';
+import { useUserTemplates } from '../hooks/useUserTemplates';
 import { getConcejaliaStyle, getPriorityStyle, getPriorityBadgeClass } from '../utils/concejaliaColors';
 import { exportExpedientToPDF, exportExpedientToCSV, copyExpedientTasksToClipboard, exportConcejaliaReportToPDF, exportConcejaliaReportToCSV } from '../utils/exportUtils';
 import { getTaskDeadlineInfo, getRetentionWarning } from '../utils/deadlines';
@@ -21,11 +23,13 @@ interface Props {
 
 export default function ContratosMenoresView({ user, searchQuery = '', onSelectTask, onSelectProject }: Props) {
   const concejaliasList = useConcejalias(user.uid);
+  const { allTemplates } = useUserTemplates(user?.uid);
   const [projects, setProjects] = useState<Project[]>([]);
   const [allTareas, setAllTareas] = useState<Tarea[]>([]);
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
   const [isCreatingBuilder, setIsCreatingBuilder] = useState(false);
   const [isMacroModalOpen, setIsMacroModalOpen] = useState(false);
+  const [quickChildModalProject, setQuickChildModalProject] = useState<Project | null>(null);
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
 
   // Filtros
@@ -454,7 +458,17 @@ export default function ContratosMenoresView({ user, searchQuery = '', onSelectT
                       >
                         📋 TXT
                       </button>
-
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setQuickChildModalProject(project);
+                        }}
+                        className="px-2.5 py-1 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white font-extrabold text-[11px] rounded-lg shadow-xs transition-all flex items-center gap-1 cursor-pointer"
+                        title="Añadir trámites a este contrato menor"
+                      >
+                        ➕ Trámites
+                      </button>
                       <button
                         type="button"
                         onClick={(e) => {
@@ -488,9 +502,18 @@ export default function ContratosMenoresView({ user, searchQuery = '', onSelectT
 
                 {/* TAREAS DE CONTRATO MENOR */}
                 {isExpanded && (
-                  <div className="px-4 pb-4 pt-1 sm:px-6 bg-slate-50/50 dark:bg-slate-900/30 border-t border-slate-100 dark:border-slate-700/50">
+                  <div className="px-4 pb-4 pt-2 sm:px-6 bg-slate-50/50 dark:bg-slate-900/30 border-t border-slate-100 dark:border-slate-700/50">
                     {projectTasks.length === 0 ? (
-                      <p className="text-xs text-slate-400 italic py-2 pl-6">No hay tareas registradas en este contrato menor.</p>
+                      <div className="text-center py-4 space-y-2">
+                        <p className="text-xs text-slate-400 italic">No hay tareas registradas en este contrato menor.</p>
+                        <button
+                          type="button"
+                          onClick={() => setQuickChildModalProject(project)}
+                          className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl shadow-xs inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+                        >
+                          <span>➕</span> Añadir Trámites
+                        </button>
+                      </div>
                     ) : (
                       <div className="pl-4 sm:pl-6 border-l-2 border-amber-300 dark:border-amber-700 space-y-2 py-2">
                         {projectTasks.map((tarea) => {
@@ -501,7 +524,7 @@ export default function ContratosMenoresView({ user, searchQuery = '', onSelectT
                           return (
                             <div
                               key={tarea.id}
-                              onClick={() => onSelectTask(tarea)}
+                              onClick={() => onSelectTask && onSelectTask(tarea)}
                               className={`p-3 rounded-xl flex items-center justify-between gap-3 border transition-all shadow-2xs cursor-pointer ${
                                 isSelected
                                   ? 'bg-amber-50/90 dark:bg-amber-950/40 border-amber-500 ring-2 ring-amber-500/30'
@@ -511,7 +534,6 @@ export default function ContratosMenoresView({ user, searchQuery = '', onSelectT
                               }`}
                             >
                               <div className="flex items-center gap-3 min-w-0 flex-1">
-                                {/* Checkbox de Selección Masiva */}
                                 <button
                                   type="button"
                                   onClick={(e) => {
@@ -550,7 +572,7 @@ export default function ContratosMenoresView({ user, searchQuery = '', onSelectT
                                 </button>
 
                                 <div className="min-w-0 flex-1">
-                                  <p className={`text-sm font-semibold truncate ${isCompleted ? 'text-slate-400 line-through' : 'text-slate-700 dark:text-slate-200'}`}>
+                                  <p className={`text-sm font-medium truncate ${isCompleted ? 'text-slate-400 line-through' : 'text-slate-700 dark:text-slate-200'}`}>
                                     {tarea.titulo || tarea.title}
                                   </p>
                                   {taskNote && (
@@ -562,6 +584,7 @@ export default function ContratosMenoresView({ user, searchQuery = '', onSelectT
                               </div>
 
                               <div className="flex items-center gap-2 shrink-0">
+                                {getStatusBadge && getStatusBadge(tarea.status, tarea.blockedBy)}
                                 {getPriorityBadge(tarea.prioridad, (tarea as any).priority)}
                                 {(() => {
                                   const dl = getTaskDeadlineInfo(tarea);
@@ -600,6 +623,15 @@ export default function ContratosMenoresView({ user, searchQuery = '', onSelectT
                             </div>
                           );
                         })}
+                        <div className="pt-2 flex justify-end">
+                          <button
+                            type="button"
+                            onClick={() => setQuickChildModalProject(project)}
+                            className="px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-amber-50 dark:hover:bg-amber-950/40 text-slate-600 dark:text-slate-300 hover:text-amber-600 dark:hover:text-amber-300 text-xs font-bold rounded-xl border border-slate-200 dark:border-slate-700 transition-colors inline-flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                          >
+                            <span>➕</span> Añadir más trámites a este contrato
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -608,6 +640,18 @@ export default function ContratosMenoresView({ user, searchQuery = '', onSelectT
             );
           })}
         </div>
+      )}
+
+      {/* MODAL DE ACCESO DIRECTO PARA TAREAS HIJAS */}
+      {quickChildModalProject && (
+        <QuickChildTasksModal
+          user={user}
+          project={quickChildModalProject}
+          existingTasks={allTareas.filter(t => t.projectId === quickChildModalProject.id)}
+          isOpen={!!quickChildModalProject}
+          onClose={() => setQuickChildModalProject(null)}
+          templates={allTemplates}
+        />
       )}
 
       {/* MODAL DE MACRO-EXPEDIENTE */}

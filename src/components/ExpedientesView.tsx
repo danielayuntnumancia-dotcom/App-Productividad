@@ -6,10 +6,12 @@ import { Tarea, Project } from '../types';
 import TemplateSelectorModal from './TemplateSelectorModal';
 import ExpedienteBuilderModal from './ExpedienteBuilderModal';
 import MacroExpedienteModal from './MacroExpedienteModal';
+import QuickChildTasksModal from './QuickChildTasksModal';
 import BulkTaskActionBar from './BulkTaskActionBar';
 import { getConcejaliaStyle, getPriorityStyle, getPriorityBadgeClass } from '../utils/concejaliaColors';
 import { exportExpedientToPDF, exportExpedientToCSV, copyExpedientTasksToClipboard, exportConcejaliaReportToPDF, exportConcejaliaReportToCSV } from '../utils/exportUtils';
 import { useConcejalias } from '../hooks/useConcejalias';
+import { useUserTemplates } from '../hooks/useUserTemplates';
 import { getTaskDeadlineInfo, getRetentionWarning } from '../utils/deadlines';
 import { moveToTrashTask, moveToTrashExpediente } from '../utils/trashUtils';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -26,6 +28,7 @@ type TaskStatusFilter = 'todos' | 'todo' | 'in_progress' | 'waiting_on_third_par
 
 export default function ExpedientesView({ user, searchQuery = '', onSelectTask, onSelectProject }: Props) {
   const concejaliasList = useConcejalias(user.uid);
+  const { allTemplates } = useUserTemplates(user?.uid);
   const [projects, setProjects] = useState<Project[]>([]);
   const [allTareas, setAllTareas] = useState<Tarea[]>([]);
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
@@ -33,6 +36,7 @@ export default function ExpedientesView({ user, searchQuery = '', onSelectTask, 
   const [isCreatingBuilder, setIsCreatingBuilder] = useState(false);
   const [isMacroModalOpen, setIsMacroModalOpen] = useState(false);
   const [selectedMacroProjectForAdd, setSelectedMacroProjectForAdd] = useState<Project | null>(null);
+  const [quickChildModalProject, setQuickChildModalProject] = useState<Project | null>(null);
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
 
   // Filtros
@@ -636,6 +640,18 @@ export default function ExpedientesView({ user, searchQuery = '', onSelectTask, 
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
+                            setQuickChildModalProject(project);
+                          }}
+                          className="px-2.5 py-1 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white font-extrabold text-[11px] rounded-lg shadow-xs transition-all flex items-center gap-1 cursor-pointer"
+                          title="Añadir trámites o tareas hijas rápidamente a este expediente"
+                        >
+                          ➕ Trámites
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
                             if (onSelectProject) {
                               onSelectProject({
                                 ...project,
@@ -670,13 +686,22 @@ export default function ExpedientesView({ user, searchQuery = '', onSelectTask, 
                         transition={{ duration: 0.2 }}
                         className="overflow-hidden"
                       >
-                        <div className="border-t border-slate-100 dark:border-slate-700 p-4 bg-slate-50/50 dark:bg-slate-900/30 space-y-2">
+                        <div className="border-t border-slate-100 dark:border-slate-700 p-4 bg-slate-50/50 dark:bg-slate-900/30 space-y-3">
                           {projectTasks.length === 0 ? (
-                        <p className="text-xs text-slate-400 dark:text-slate-500 italic py-2 text-center">
-                          No hay tareas registradas en este expediente
-                        </p>
-                      ) : (
-                        <div className="space-y-1.5">
+                            <div className="text-center py-4 space-y-2.5">
+                              <p className="text-xs text-slate-400 dark:text-slate-500 italic">
+                                No hay tareas registradas en este expediente
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() => setQuickChildModalProject(project)}
+                                className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-xs inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+                              >
+                                <span>➕</span> Añadir Trámites
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="space-y-1.5">
                           {projectTasks.map((tarea) => {
                             const isCompleted = tarea.status === 'completed' || !!tarea.completada;
                             const taskNote = tarea.notes || tarea.notas;
@@ -785,6 +810,15 @@ export default function ExpedientesView({ user, searchQuery = '', onSelectTask, 
                               </div>
                             );
                           })}
+                          <div className="pt-2 flex justify-end">
+                            <button
+                              type="button"
+                              onClick={() => setQuickChildModalProject(project)}
+                              className="px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-300 text-xs font-bold rounded-xl border border-slate-200 dark:border-slate-700 transition-colors inline-flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                            >
+                              <span>➕</span> Añadir más trámites a este expediente
+                            </button>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -1084,6 +1118,18 @@ export default function ExpedientesView({ user, searchQuery = '', onSelectTask, 
         <TemplateSelectorModal
           user={user}
           onClose={() => setIsCreatingExpediente(false)}
+        />
+      )}
+
+      {/* MODAL DE ACCESO DIRECTO PARA TAREAS HIJAS */}
+      {quickChildModalProject && (
+        <QuickChildTasksModal
+          user={user}
+          project={quickChildModalProject}
+          existingTasks={allTareas.filter(t => t.projectId === quickChildModalProject.id)}
+          isOpen={!!quickChildModalProject}
+          onClose={() => setQuickChildModalProject(null)}
+          templates={allTemplates}
         />
       )}
 
