@@ -195,6 +195,44 @@ export default function ExpedientesView({ user, searchQuery = '', onSelectTask, 
   const getProjectEffectiveStatus = (proj: Project): 'active' | 'completed' | 'archived' => {
     if (proj.status === 'archived') return 'archived';
     if (proj.status === 'completed') return 'completed';
+
+    // Para Macro-Expedientes: calcular estado a partir de las tareas de TODOS sus sub-contratos hijos
+    if (proj.isMacroProject === true || proj.type === 'macro_expediente') {
+      const childProjectIds = effectiveProjects
+        .filter(p => {
+          if (!p || p.id === proj.id) return false;
+          if (p.parentProjectId && (
+            p.parentProjectId === proj.id ||
+            p.parentProjectId === (proj as any).projectId ||
+            p.parentProjectId === proj.expedientCode ||
+            (proj.firestoreDocId && p.parentProjectId === proj.firestoreDocId)
+          )) return true;
+          if (p.linkedExpedientId && (
+            p.linkedExpedientId === proj.id ||
+            p.linkedExpedientId === (proj as any).projectId ||
+            p.linkedExpedientId === proj.expedientCode ||
+            (proj.firestoreDocId && p.linkedExpedientId === proj.firestoreDocId)
+          )) return true;
+          if (p.parentProjectName && proj.name && p.parentProjectName.trim().toLowerCase() === proj.name.trim().toLowerCase()) return true;
+          return false;
+        })
+        .map(p => p.id);
+
+      const allMacroTasks = allTareas.filter(t =>
+        t.projectId === proj.id ||
+        (t.projectId && childProjectIds.includes(t.projectId)) ||
+        t.parentProjectId === proj.id ||
+        (proj.expedientCode && (t.parentProjectId === proj.expedientCode || t.linkedExpedientId === proj.expedientCode)) ||
+        (proj.firestoreDocId && (t.parentProjectId === proj.firestoreDocId || t.linkedExpedientId === proj.firestoreDocId))
+      );
+
+      if (allMacroTasks.length > 0 && allMacroTasks.every(t => t.status === 'completed' || t.completada)) {
+        return 'completed';
+      }
+      return 'active';
+    }
+
+    // Expedientes ordinarios
     const projTasks = allTareas.filter((t) => t.projectId === proj.id);
     if (projTasks.length > 0 && projTasks.every((t) => t.status === 'completed' || t.completada)) {
       return 'completed';
@@ -234,10 +272,47 @@ export default function ExpedientesView({ user, searchQuery = '', onSelectTask, 
       return;
     }
 
-    const projTasks = allTareas.filter((t) => t.projectId === proj.id);
     if (taskStatusFilter !== 'todos') {
-      const hasMatchingTask = projTasks.some(filterTaskByStatus);
-      if (!hasMatchingTask && projTasks.length > 0) return;
+      const isMacro = proj.isMacroProject === true || proj.type === 'macro_expediente';
+
+      if (isMacro) {
+        // Para macro-expedientes: evaluar el filtro sobre las tareas de sus sub-contratos hijos
+        const childProjectIds = effectiveProjects
+          .filter(p => {
+            if (!p || p.id === proj.id) return false;
+            if (p.parentProjectId && (
+              p.parentProjectId === proj.id ||
+              p.parentProjectId === (proj as any).projectId ||
+              p.parentProjectId === proj.expedientCode ||
+              (proj.firestoreDocId && p.parentProjectId === proj.firestoreDocId)
+            )) return true;
+            if (p.linkedExpedientId && (
+              p.linkedExpedientId === proj.id ||
+              p.linkedExpedientId === (proj as any).projectId ||
+              p.linkedExpedientId === proj.expedientCode ||
+              (proj.firestoreDocId && p.linkedExpedientId === proj.firestoreDocId)
+            )) return true;
+            if (p.parentProjectName && proj.name && p.parentProjectName.trim().toLowerCase() === proj.name.trim().toLowerCase()) return true;
+            return false;
+          })
+          .map(p => p.id);
+
+        const allMacroTasks = allTareas.filter(t =>
+          t.projectId === proj.id ||
+          (t.projectId && childProjectIds.includes(t.projectId)) ||
+          t.parentProjectId === proj.id ||
+          (proj.expedientCode && (t.parentProjectId === proj.expedientCode || t.linkedExpedientId === proj.expedientCode)) ||
+          (proj.firestoreDocId && (t.parentProjectId === proj.firestoreDocId || t.linkedExpedientId === proj.firestoreDocId))
+        );
+
+        const hasMatchingTask = allMacroTasks.some(filterTaskByStatus);
+        if (!hasMatchingTask && allMacroTasks.length > 0) return;
+      } else {
+        // Expedientes ordinarios
+        const projTasks = allTareas.filter((t) => t.projectId === proj.id);
+        const hasMatchingTask = projTasks.some(filterTaskByStatus);
+        if (!hasMatchingTask && projTasks.length > 0) return;
+      }
     }
 
     if (!concejaliaGroups[groupName]) concejaliaGroups[groupName] = [];

@@ -1,6 +1,6 @@
 # Estado del Proyecto - FocusFlow (App de Productividad)
 
-**Fecha de actualización:** 21 de Agosto de 2026  
+**Fecha de actualización:** 28 de Septiembre de 2026  
 **Repositorio GitHub:** `https://github.com/danielayuntnumancia-dotcom/App-Productividad.git` (Rama `main`)  
 **Despliegue Firebase Hosting:** `https://app-productividad-54955.web.app`
 
@@ -8,36 +8,24 @@
 
 ## 🏆 Logros de esta sesión
 
-### 1. Cerebro Ontológico Dinámico de FocusFlow para la IA (Groq AI)
-* **Serialización Jerárquica Completa:** Se implementó `buildAppKnowledgeGraph` en `src/services/geminiService.ts`, estructurando en vivo toda la base de datos:
-  * Macro-Expedientes (`isMacroProject: true`) vinculando automáticamente todos sus sub-expedientes y contratos menores hijos.
-  * Desglose exacto paso a paso ($1..N$) por expediente con matrices de cumplimiento precalculadas (`¿Pasos 1-6 hechos y 7-8 pendientes?: SÍ/NO`).
-  * Catálogo de plantillas oficiales de fábrica y personalizadas por el usuario.
-  * Concejalías municipales activas.
-* **Integración de Modelos Oficiales Activos en Groq:**
-  * Motor principal: **`openai/gpt-oss-120b`** (120B parámetros, máxima capacidad de razonamiento).
-  * Motores complementarios: **`groq/compound`**, **`qwen/qwen3.6-27b`**, **`groq/compound-mini`**, **`openai/gpt-oss-20b`**.
-* **Blindaje Estricto de Consumo de Tokens:**
-  * Compresión semántica de alta densidad (formato ultra-compacto de 1 línea por expediente).
-  * Poda inteligente de historial truncando mensajes previos largos.
-  * Ajuste de `max_tokens: 800` y límite máximo de carga, asegurando un consumo de ~2.000 tokens por consulta (muy por debajo del límite de 8.000 TPM de Groq Free Tier).
-* **Visor Transparente en Vivo:** Botón **`🧠 Ver Cerebro`** en el modal del asistente para que el usuario pueda inspeccionar en cualquier momento qué datos exactos tiene cargados la IA.
+### 1. Fix: Filtrado correcto de Macro-Expedientes por estado de trámites
 
-### 2. Acceso Directo y Creación en Lote de Tareas Hijas
-* **Nuevo Modal `QuickChildTasksModal.tsx`:**
-  * Permite añadir múltiples trámites en lote antes de guardar los cambios.
-  * Sugerencias de trámites frecuentes con 1 clic (`+ Presupuesto`, `+ Declaración Responsable`, `+ AEAT`, `+ TGSS`, `+ Memoria`, `+ RC`, `+ Firma Gestiona`, etc.).
-  * Selector **«Plantilla rápida»** para volcar todos los pasos de cualquier plantilla oficial o personalizada directamente en el expediente.
-  * Control total de todos los parámetros por cada trámite: Título, Concejalía, Prioridad, Tiempo estimado, Fecha límite (`CustomDatePicker`), Estado inicial, Retenido por / Motivo, Drive, Notas y ⭐ En Mi Día.
-  * Auto-numeración correlativa inteligente de pasos.
-  * Guardado atómico en Firestore mediante `writeBatch`.
-* **Botón de Acceso Directo `➕ Trámites`:**
-  * Integrado directamente en las tarjetas de **Expedientes Ordinarios**, **Sub-Expedientes de Macro-Expedientes** y **Contratos Menores**.
-  * Accesible también al final de la lista de tareas dentro del expediente expandido.
+**Problema:** Al filtrar por "Pendientes" (o cualquier estado de trámite), los Macro-Expedientes con **todos sus sub-contratos completados al 100%** seguían apareciendo en el listado. Además, sus sub-contratos hijos sí desaparecían pero el macro padre permanecía visible, y el contador de sub-contratos pasaba a mostrar 0 (bug visual).
 
-### 3. Sincronización y Despliegue
-* Código versionado y subido a GitHub (rama `main`).
-* Desplegado con éxito y validado en Firebase Hosting.
+**Causa raíz (2 bugs en `ExpedientesView.tsx`):**
+* `getProjectEffectiveStatus`: para Macro-Expedientes, calculaba el estado solo sobre sus tareas directas (siempre vacías), ignorando las tareas de sus sub-contratos hijos. Por eso nunca se marcaban como `'completed'`.
+* Bloque `concejaliaGroups` (filtro de `taskStatusFilter`): al no tener tareas directas, el macro siempre superaba el filtro de estado de trámites y se colaba en el listado independientemente del filtro seleccionado.
+
+**Solución aplicada:**
+* `getProjectEffectiveStatus` ahora detecta si el proyecto es un Macro-Expediente y, en ese caso, recorre los IDs de todos sus hijos para recopilar **todas las tareas de la jerarquía completa**. Si todas están completadas → devuelve `'completed'`.
+* El bloque de filtrado por `taskStatusFilter` en `concejaliaGroups` ahora bifurca entre Macro-Expedientes (evalúa tareas de hijos) y expedientes ordinarios (evalúa tareas propias), evitando que los macros se cuelen con 0 tareas directas.
+
+**Resultado:** El Macro-Expediente ahora se filtra correctamente junto con sus sub-contratos. Si todos están completos y se filtra por "Pendientes", el macro desaparece del listado.
+
+### 2. Build y Despliegue
+* Código compilado con Vite (1577 módulos, 9.89s) sin errores nuevos.
+* Desplegado con éxito en Firebase Hosting (30 archivos).
+* Validado en producción: `https://app-productividad-54955.web.app`
 
 ---
 
@@ -49,3 +37,5 @@
    * Añadir nuevas plantillas predefinidas según las necesidades de las distintas concejalías.
 3. **Mantenimiento General:**
    * Monitorizar el rendimiento de Firestore y los tiempos de respuesta de la API de Groq en producción.
+4. **Deuda Técnica (TS):**
+   * Revisar errores de TypeScript preexistentes en `App.tsx`, `ContratosMenoresView.tsx`, `GlobalSearchModal.tsx` y `KanbanBoard.tsx` (no bloquean el build de Vite pero sí el chequeo estricto de `tsc --noEmit`).
